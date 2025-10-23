@@ -4,15 +4,15 @@
 identifier = "xuanwu-rust"
 
 # For GUI
-home_page_url = 'https://xuanwu.beta.atomgit.com/'
+home_page_url = 'https://xuanwu.openatom.cn/'
 
-rustup_dist_server = 'https://xuanwu.base.atomgit.com'
-rustup_update_root = 'https://xuanwu.base.atomgit.com/rustup'
+rustup_dist_server = 'https://mirror.xuanwu.openatom.cn'
+rustup_update_root = 'https://mirror.xuanwu.openatom.cn/rustup'
 rim_dist_server = 'https://rust-mirror.obs.cn-north-4.myhuaweicloud.com'
 
 [cargo]
 registry_name = 'xuanwu-sparse'
-registry_url = 'sparse+https://xuanwu.base.atomgit.com/index/'
+registry_url = 'sparse+https://mirror.xuanwu.openatom.cn/index/'
 
 [locale.en-US]
 vendor = "Rust China Community"
@@ -30,5 +30,5 @@ content_source = "内容来源：Rust 中国社区，Rust 原生社区，第三�
 
 [override.bisheng]
 rustup_dist_server = 'https://rust-dist.obs.cn-north-4.myhuaweicloud.com/bisheng'
-rustup_update_root = 'https://xuanwu.base.atomgit.com/rustup'
+rustup_update_root = 'https://mirror.xuanwu.openatom.cn/rustup'
 rim_dist_server = 'https://rust-mirror.obs.cn-north-4.myhuaweicloud.com'

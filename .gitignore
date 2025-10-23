@@ -21,3 +21,7 @@ resources/templates/*
 
 # Local script cache
 ci/scripts/cache
+
+# local tools and scripts, etc. 
+.local 
+

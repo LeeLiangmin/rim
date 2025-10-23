@@ -56,11 +56,6 @@ version = "14.2.0-rt_v12-rev2"
 path = "tools/x86_64-14.2.0-release-posix-seh-ucrt-rt_v12-rev2.7z"
 display-name = "MinGW-w64"
 
-[tools.target.x86_64-pc-windows-gnu.codearts-rust]
-version = "3.2.0"
-path = "tools/codearts-rust.zip"
-display-name = "CodeArts IDE"
-
 [tools.target.x86_64-pc-windows-gnu.cargo-nextest]
 optional = true
 version = "0.9.94"
@@ -73,46 +68,11 @@ kind = "rule-set"
 display-name = "编程规范规则集"
 requires = ["rust"]
 
-[tools.target.x86_64-pc-windows-gnu.ylong_json]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_json-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-pc-windows-gnu.ylong_light_actor]
-optional = true
-version = "0.1.0"
-path = "tools/commonlibrary_rust_ylong_light_actor-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-pc-windows-gnu.ylong_xml]
-optional = true
-version = "0.1.0"
-path = "tools/commonlibrary_rust_ylong_xml-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-pc-windows-gnu.ylong_http]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_http-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-pc-windows-gnu.ylong_runtime]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_runtime-master.zip"
-kind = "crate"
-
 [tools.target.x86_64-pc-windows-msvc.buildtools]
 required = true
 restricted = true
 default = "https://aka.ms/vs/17/release/vs_BuildTools.exe"
 display-name = "Visual Studio Build Tools"
-
-[tools.target.x86_64-pc-windows-msvc.codearts-rust]
-version = "3.2.0"
-path = "tools/codearts-rust.zip"
-display-name = "CodeArts IDE"
 
 [tools.target.x86_64-pc-windows-msvc.cargo-nextest]
 optional = true
@@ -126,36 +86,6 @@ kind = "rule-set"
 display-name = "编程规范规则集"
 requires = ["rust"]
 
-[tools.target.x86_64-pc-windows-msvc.ylong_json]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_json-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-pc-windows-msvc.ylong_light_actor]
-optional = true
-version = "0.1.0"
-path = "tools/commonlibrary_rust_ylong_light_actor-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-pc-windows-msvc.ylong_xml]
-optional = true
-version = "0.1.0"
-path = "tools/commonlibrary_rust_ylong_xml-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-pc-windows-msvc.ylong_http]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_http-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-pc-windows-msvc.ylong_runtime]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_runtime-master.zip"
-kind = "crate"
-
 [tools.target.x86_64-unknown-linux-gnu.cargo-nextest]
 optional = true
 version = "0.9.94"
@@ -168,36 +98,6 @@ kind = "rule-set"
 display-name = "编程规范规则集"
 requires = ["rust"]
 
-[tools.target.x86_64-unknown-linux-gnu.ylong_json]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_json-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-unknown-linux-gnu.ylong_light_actor]
-optional = true
-version = "0.1.0"
-path = "tools/commonlibrary_rust_ylong_light_actor-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-unknown-linux-gnu.ylong_xml]
-optional = true
-version = "0.1.0"
-path = "tools/commonlibrary_rust_ylong_xml-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-unknown-linux-gnu.ylong_http]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_http-master.zip"
-kind = "crate"
-
-[tools.target.x86_64-unknown-linux-gnu.ylong_runtime]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_runtime-master.zip"
-kind = "crate"
-
 [tools.target.aarch64-unknown-linux-gnu.cargo-nextest]
 optional = true
 version = "0.9.94"
@@ -209,33 +109,3 @@ path = "tools/rust-1.74.0-aarch64-unknown-linux-gnu.tar.xz"
 kind = "rule-set"
 display-name = "编程规范规则集"
 requires = ["rust"]
-
-[tools.target.aarch64-unknown-linux-gnu.ylong_json]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_json-master.zip"
-kind = "crate"
-
-[tools.target.aarch64-unknown-linux-gnu.ylong_light_actor]
-optional = true
-version = "0.1.0"
-path = "tools/commonlibrary_rust_ylong_light_actor-master.zip"
-kind = "crate"
-
-[tools.target.aarch64-unknown-linux-gnu.ylong_xml]
-optional = true
-version = "0.1.0"
-path = "tools/commonlibrary_rust_ylong_xml-master.zip"
-kind = "crate"
-
-[tools.target.aarch64-unknown-linux-gnu.ylong_http]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_http-master.zip"
-kind = "crate"
-
-[tools.target.aarch64-unknown-linux-gnu.ylong_runtime]
-optional = true
-version = "1.0.0"
-path = "tools/commonlibrary_rust_ylong_runtime-master.zip"
-kind = "crate"

@@ -89,6 +89,8 @@ async fn get_component_list() -> Result<Vec<Component>> {
         .lock()
         .await
         .current_target_components(true)?;
+
+
     Ok(components)
 }
 
