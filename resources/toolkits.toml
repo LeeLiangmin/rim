@@ -12,8 +12,8 @@
 # 此文件需要手动修改。
 
 [config]
-rust-server = "https://xuanwu.base.atomgit.com"
-rustup-server = "https://xuanwu.base.atomgit.com/rustup"
+rust-server = "https://mirror.xuanwu.openatom.cn"
+rustup-server = "https://mirror.xuanwu.openatom.cn/rustup"
 # The folder path (under `resources` dir) to store downloaded packages, used for offline packaging.
 # package-dir = "packages"
 targets = [
@@ -110,43 +110,43 @@ IDE = ["codearts-rust"]
 
 [toolkit.community.value.tools.target.x86_64-pc-windows-gnu]
 mingw64 = { display-name = "MinGW-w64", required = true, version = "14.2.0-rt_v12-rev2", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/mingw64/14.2.0-rt_v12-rev2/x86_64-14.2.0-release-posix-seh-ucrt-rt_v12-rev2.7z" }
-codearts-rust = { display-name = "CodeArts IDE", version = "3.2.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/codearts/3.2.0/codearts-rust.zip" }
+# codearts-rust = { display-name = "CodeArts IDE", version = "3.2.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/codearts/3.2.0/codearts-rust.zip" }
 cargo-nextest = { optional = true, version = "0.9.94", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/cargo-nextest/0.9.94/cargo-nextest-0.9.94-x86_64-pc-windows-msvc.zip" }
 coding-guidelines-ruleset = { display-name = "编程规范规则集", requires = ["rust"], kind = "rule-set", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/coding-guidelines-ruleset/0.1.0/rust-1.74.0-x86_64-pc-windows-gnu.tar.xz" }
-ylong_json = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_json/1.0.0/commonlibrary_rust_ylong_json-master.zip" }
-ylong_light_actor = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_light_actor/0.1.0/commonlibrary_rust_ylong_light_actor-master.zip" }
-ylong_xml = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_xml/0.1.0/commonlibrary_rust_ylong_xml-master.zip" }
-ylong_http = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_http/1.0.0/commonlibrary_rust_ylong_http-master.zip" }
-ylong_runtime = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_runtime/1.0.0/commonlibrary_rust_ylong_runtime-master.zip" }
+# ylong_json = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_json/1.0.0/commonlibrary_rust_ylong_json-master.zip" }
+# ylong_light_actor = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_light_actor/0.1.0/commonlibrary_rust_ylong_light_actor-master.zip" }
+# ylong_xml = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_xml/0.1.0/commonlibrary_rust_ylong_xml-master.zip" }
+# ylong_http = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_http/1.0.0/commonlibrary_rust_ylong_http-master.zip" }
+# ylong_runtime = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_runtime/1.0.0/commonlibrary_rust_ylong_runtime-master.zip" }
 
 [toolkit.community.value.tools.target.x86_64-pc-windows-msvc]
 buildtools = { required = true, display-name = "Visual Studio Build Tools", restricted = true, default = "https://aka.ms/vs/17/release/vs_BuildTools.exe" }
-codearts-rust = { display-name = "CodeArts IDE", version = "3.2.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/codearts/3.2.0/codearts-rust.zip" }
+# codearts-rust = { display-name = "CodeArts IDE", version = "3.2.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/codearts/3.2.0/codearts-rust.zip" }
 cargo-nextest = { optional = true, version = "0.9.94", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/cargo-nextest/0.9.94/cargo-nextest-0.9.94-x86_64-pc-windows-msvc.zip" }
 coding-guidelines-ruleset = { display-name = "编程规范规则集", requires = ["rust"], kind = "rule-set", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/coding-guidelines-ruleset/0.1.0/rust-1.74.0-x86_64-pc-windows-msvc.tar.xz" }
-ylong_json = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_json/1.0.0/commonlibrary_rust_ylong_json-master.zip" }
-ylong_light_actor = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_light_actor/0.1.0/commonlibrary_rust_ylong_light_actor-master.zip" }
-ylong_xml = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_xml/0.1.0/commonlibrary_rust_ylong_xml-master.zip" }
-ylong_http = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_http/1.0.0/commonlibrary_rust_ylong_http-master.zip" }
-ylong_runtime = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_runtime/1.0.0/commonlibrary_rust_ylong_runtime-master.zip" }
+# ylong_json = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_json/1.0.0/commonlibrary_rust_ylong_json-master.zip" }
+# ylong_light_actor = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_light_actor/0.1.0/commonlibrary_rust_ylong_light_actor-master.zip" }
+# ylong_xml = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_xml/0.1.0/commonlibrary_rust_ylong_xml-master.zip" }
+# ylong_http = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_http/1.0.0/commonlibrary_rust_ylong_http-master.zip" }
+# ylong_runtime = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_runtime/1.0.0/commonlibrary_rust_ylong_runtime-master.zip" }
 
 [toolkit.community.value.tools.target.x86_64-unknown-linux-gnu]
 cargo-nextest = { optional = true, version = "0.9.94", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/cargo-nextest/0.9.94/cargo-nextest-0.9.94-x86_64-unknown-linux-gnu.tar.gz" }
 coding-guidelines-ruleset = { display-name = "编程规范规则集", requires = ["rust"], kind = "rule-set", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/coding-guidelines-ruleset/0.1.0/rust-1.74.0-x86_64-unknown-linux-gnu.tar.xz" }
-ylong_json = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_json/1.0.0/commonlibrary_rust_ylong_json-master.zip" }
-ylong_light_actor = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_light_actor/0.1.0/commonlibrary_rust_ylong_light_actor-master.zip" }
-ylong_xml = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_xml/0.1.0/commonlibrary_rust_ylong_xml-master.zip" }
-ylong_http = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_http/1.0.0/commonlibrary_rust_ylong_http-master.zip" }
-ylong_runtime = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_runtime/1.0.0/commonlibrary_rust_ylong_runtime-master.zip" }
+# ylong_json = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_json/1.0.0/commonlibrary_rust_ylong_json-master.zip" }
+# ylong_light_actor = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_light_actor/0.1.0/commonlibrary_rust_ylong_light_actor-master.zip" }
+# ylong_xml = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_xml/0.1.0/commonlibrary_rust_ylong_xml-master.zip" }
+# ylong_http = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_http/1.0.0/commonlibrary_rust_ylong_http-master.zip" }
+# ylong_runtime = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_runtime/1.0.0/commonlibrary_rust_ylong_runtime-master.zip" }
 
 [toolkit.community.value.tools.target.aarch64-unknown-linux-gnu]
 cargo-nextest = { optional = true, version = "0.9.94", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/cargo-nextest/0.9.94/cargo-nextest-0.9.94-aarch64-unknown-linux-gnu.tar.gz" }
 coding-guidelines-ruleset = { display-name = "编程规范规则集", requires = ["rust"], kind = "rule-set", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/coding-guidelines-ruleset/0.1.0/rust-1.74.0-aarch64-unknown-linux-gnu.tar.xz" }
-ylong_json = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_json/1.0.0/commonlibrary_rust_ylong_json-master.zip" }
-ylong_light_actor = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_light_actor/0.1.0/commonlibrary_rust_ylong_light_actor-master.zip" }
-ylong_xml = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_xml/0.1.0/commonlibrary_rust_ylong_xml-master.zip" }
-ylong_http = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_http/1.0.0/commonlibrary_rust_ylong_http-master.zip" }
-ylong_runtime = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_runtime/1.0.0/commonlibrary_rust_ylong_runtime-master.zip" }
+# ylong_json = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_json/1.0.0/commonlibrary_rust_ylong_json-master.zip" }
+# ylong_light_actor = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_light_actor/0.1.0/commonlibrary_rust_ylong_light_actor-master.zip" }
+# ylong_xml = { optional = true, kind = "crate", version = "0.1.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_xml/0.1.0/commonlibrary_rust_ylong_xml-master.zip" }
+# ylong_http = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_http/1.0.0/commonlibrary_rust_ylong_http-master.zip" }
+# ylong_runtime = { optional = true, kind = "crate", version = "1.0.0", url = "https://rust-mirror.obs.cn-north-4.myhuaweicloud.com/dist/toolset/ylong_runtime/1.0.0/commonlibrary_rust_ylong_runtime-master.zip" }
 # ========================= Manifest For Community Toolkit END =========================
 
 # ========================= Manifest For BiSheng Toolkit START =========================
