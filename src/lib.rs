@@ -19,4 +19,4 @@ pub use core::uninstall::UninstallConfiguration;
 pub use core::{components, toolkit, update, AppInfo, Language, Mode};
 pub use core::{get_toolkit_manifest, ToolkitManifestExt};
 
-i18n!("locales", fallback = "en");
+i18n!("locales", fallback = "en-US");

@@ -19,7 +19,7 @@ use anyhow::Result;
 use rim::{cli::ExecutableCommand, configuration::Configuration, AppInfo, Mode};
 use rim_common::utils;
 
-i18n!("../../locales", fallback = "en");
+i18n!("../../locales", fallback = "en-US");
 
 static INSTALL_DIR: OnceLock<PathBuf> = OnceLock::new();
 
