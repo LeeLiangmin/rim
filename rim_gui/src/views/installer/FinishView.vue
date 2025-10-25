@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import { installConf, invokeCommand } from '@/utils/index';
 
-const runApp = ref(true);
+const runApp = ref(false);
 
 function closeWindow() {
   if (runApp.value) {
@@ -19,6 +19,7 @@ function closeWindow() {
       <p>安装程序已经将Rust安装到您的电脑中，</p>
       <p>单击“完成”退出安装程序</p>
       <base-check-box
+        v-if="runApp"
         v-model="runApp"
         title="安装完成后打开示例项目"
         mt="12px"
