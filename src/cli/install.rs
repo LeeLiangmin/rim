@@ -11,7 +11,7 @@ use crate::components::Component;
 use crate::core::install::InstallConfiguration;
 use crate::core::{
     default_cargo_registry, default_rustup_dist_server, default_rustup_update_root,
-    get_toolkit_manifest, try_it, ToolkitManifestExt,
+    get_toolkit_manifest, ToolkitManifestExt,
 };
 use crate::default_install_dir;
 

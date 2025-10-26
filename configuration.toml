@@ -12,7 +12,7 @@ rim_dist_server = 'https://rust-mirror.obs.cn-north-4.myhuaweicloud.com'
 
 [cargo]
 registry_name = 'xuanwu-sparse'
-registry_url = 'sparse+https://xuanwu.base.atomgit.com/index/'
+registry_url = 'sparse+https://mirror.xuanwu.openatom.cn/index/'
 
 [locale.en-US]
 vendor = "Rust China Community"

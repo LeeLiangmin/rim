@@ -191,7 +191,17 @@ pub fn to_string_lossy<S: AsRef<OsStr>>(s: S) -> String {
 /// Allowing the i18n framework to use the current system locale.
 pub fn use_current_locale() {
     let locale = sys_locale::get_locale().unwrap_or_else(|| "en".to_string());
-    set_locale(&locale);
+    set_locale(get_locale_with_fallback(&locale));
+}
+
+// This list should be sync with fields of configuration.toml file
+const LOCALES: [&'static str;2] = [ "zh-CN", "en-US"];
+// locale fallback to en-US
+fn get_locale_with_fallback(locale: &str) -> &str {
+    if LOCALES.contains(&locale) {
+        return locale
+    } 
+    return LOCALES[0]
 }
 
 pub fn set_locale(loc: &str) {

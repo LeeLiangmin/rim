@@ -12,17 +12,10 @@ import { RouterView } from 'vue-router';
 :root {
   margin: 0;
   padding: 0;
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    Segoe UI,
-    Helvetica,
-    Arial,
-    sans-serif,
-    Apple Color Emoji,
-    Segoe UI Emoji,
-    Segoe UI Symbol;
-  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+             "Noto Sans", Ubuntu, Cantarell, "Liberation Sans", "DejaVu Sans",
+             "Helvetica", "Arial", system-ui, "Apple Color Emoji", "Segoe UI Emoji",
+             "Segoe UI Symbol", "Noto Color Emoji", serif, sans-serif;
   line-height: 24px;
   letter-spacing: normal;
   font-weight: 400;
