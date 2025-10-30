@@ -19,3 +19,4 @@ toml.workspace = true
 url.workspace = true
 xz2.workspace = true
 zip.workspace = true
+log.workspace = true

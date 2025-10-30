@@ -56,7 +56,11 @@ impl RunMode {
         let home = mocked::mocked_home();
         std::env::set_var("HOME", home);
         #[cfg(windows)]
-        std::env::set_var("USERPROFILE", home);
+        {
+            std::env::set_var("USERPROFILE", home);
+            // mock a desktop folder, otherwise the tauri dialog open will pop up a error dialog
+            mocked::mocked_desktop();
+        }
 
         match self {
             Self::Installer { no_gui } => {
