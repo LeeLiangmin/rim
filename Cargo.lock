@@ -3555,7 +3555,7 @@ dependencies = [
 
 [[package]]
 name = "rim"
-version = "0.9.0-beta"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "cc",
@@ -3586,7 +3586,7 @@ dependencies = [
 
 [[package]]
 name = "rim-gui"
-version = "0.9.0-beta"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "fern",
@@ -3660,6 +3660,7 @@ dependencies = [
  "anyhow",
  "cfg-if",
  "indexmap 2.9.0",
+ "log",
  "reqwest",
  "rim_common",
  "serde",

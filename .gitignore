@@ -20,3 +20,6 @@ resources/templates/channel-rust
 
 # Local script cache
 ci/scripts/cache
+
+.local 
+install 

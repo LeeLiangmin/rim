@@ -18,7 +18,7 @@ path = "src/bin/rim_cli.rs"
 members = ["rim_gui/src-tauri", "rim_dev", "rim_common", "rim_test/*"]
 
 [workspace.package]
-version = "0.9.0-beta"
+version = "0.10.0"
 edition = "2021"
 description = "An interactive Rust installation manager"
 rust-version = "1.80.0" # Dominated by 'std::sync::LazyLock'

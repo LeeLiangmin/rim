@@ -12,8 +12,8 @@
 # 此文件需要手动修改。
 
 [config]
-rust-server = "https://xuanwu.base.atomgit.com"
-rustup-server = "https://xuanwu.base.atomgit.com/rustup"
+rust-server = "https://mirror.xuanwu.openatom.cn"
+rustup-server = "https://mirror.xuanwu.openatom.cn/rustup"
 # The folder path (under `resources` dir) to store downloaded packages, used for offline packaging.
 # package-dir = "packages"
 targets = [
@@ -79,9 +79,9 @@ date = "2025-05-15"
 name = "Rust 中国社区发行版"
 version = "stable v1.87.0"
 edition = "community"
-rustup-dist-server = "https://xuanwu.base.atomgit.com"
-rustup-update-root = "https://xuanwu.base.atomgit.com/rustup"
-cargo-registry = { name = "xuanwu-sparse", index = "sparse+https://xuanwu.base.atomgit.com/index/" }
+rustup-dist-server = "https://mirror.xuanwu.openatom.cn"
+rustup-update-root = "https://mirror.xuanwu.openatom.cn/rustup"
+cargo-registry = { name = "xuanwu-sparse", index = "sparse+https://mirror.xuanwu.openatom.cn/index/" }
 
 [toolkit.community.value.rust]
 display-name = "Rust 官方工具"
@@ -182,8 +182,8 @@ name = "Rust 中国社区发行版 (毕昇)"
 version = "bisheng v1.72.0"
 edition = "bisheng"
 rustup-dist-server = "https://rust-dist.obs.cn-north-4.myhuaweicloud.com/bisheng"
-rustup-update-root = "https://xuanwu.base.atomgit.com/rustup"
-cargo-registry = { name = "xuanwu-sparse", index = "sparse+https://xuanwu.base.atomgit.com/index/" }
+rustup-update-root = "https://mirror.xuanwu.openatom.cn/rustup"
+cargo-registry = { name = "xuanwu-sparse", index = "sparse+https://mirror.xuanwu.openatom.cn/index/" }
 
 [toolkit.bisheng.value.rust]
 display-name = "Rust 官方工具"

@@ -4,13 +4,13 @@
 identifier = "xuanwu-rust"
 
 # For GUI
-home_page_url = 'https://xuanwu.beta.atomgit.com/'
+home_page_url = 'https://xuanwu.openatom.cn/'
 
 # Default download sources
-rustup_dist_server = 'https://xuanwu.base.atomgit.com'
-rustup_update_root = 'https://xuanwu.base.atomgit.com/rustup'
+rustup_dist_server = 'https://mirror.xuanwu.openatom.cn'
+rustup_update_root = 'https://mirror.xuanwu.openatom.cn/rustup'
 rim_dist_server = 'https://rust-mirror.obs.cn-north-4.myhuaweicloud.com'
-registry = { name = 'xuanwu-sparse', index = 'sparse+https://xuanwu.base.atomgit.com/index/' }
+registry = { name = 'xuanwu-sparse', index = 'sparse+https://mirror.xuanwu.openatom.cn/index/' }
 
 [locale.en-US]
 logo_text = "XuanWu"

@@ -38,7 +38,7 @@ pub(crate) struct Releases {
     /// version = '0.8.0'
     ///
     /// [beta]
-    /// version = '0.9.0-beta'
+    /// version = '0.9.0'
     /// ```
     #[serde(flatten)]
     stable: ReleaseInfo,
