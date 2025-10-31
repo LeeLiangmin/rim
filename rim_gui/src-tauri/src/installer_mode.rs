@@ -40,13 +40,13 @@ pub(super) fn main(msg_recv: Receiver<String>) -> Result<()> {
 
 #[tauri::command]
 async fn default_configuration() -> BaseConfiguration {
-    let manifest = if let Some(cached) = TOOLKIT_MANIFEST.get() {
-        Some(&*cached.read().await)
+    if let Some(cached) = TOOLKIT_MANIFEST.get() {
+        let guard = cached.read().await;
+        BaseConfiguration::new(rim::default_install_dir(), Some(&*guard))
     } else {
         warn!("missing cached toolkit manifest when fetching configuration");
-        None
-    };
-    BaseConfiguration::new(rim::default_install_dir(), manifest)
+        BaseConfiguration::new(rim::default_install_dir(), None)
+    }
 }
 
 /// Check if the given path could be used for installation, and return the reason if not.

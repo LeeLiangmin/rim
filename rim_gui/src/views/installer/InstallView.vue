@@ -130,7 +130,7 @@ watch(output.value, () => {
       <base-progress w="full" h="4vh" :value="subProgress" :kind="subProgressPayload?.style.toString()"
         :length="subProgressPayload?.length" :transition="false" />
     </div>
-    <base-details my="2vh" mx="0.5vw" :title="$t('show_details')">
+    <base-details my="2vh" mx="0.5vw" :title="$t('show_details')" :open="true">
       <base-card h="40vh" mx="0.5vw" my="0.5vh">
         <div ref="scrollBox" flex="1" overflow="auto" h="full">
           <p my="0.5rem" v-for="item in output" :key="item">{{ item }}</p>

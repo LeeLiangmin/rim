@@ -5,6 +5,15 @@
                 width: width,
                 height: height,
             }">
+                <div class="panel-close-btn" @click="emit('close')" title="close">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" viewBox="0 0 16 16">
+                        <path
+                            fill-rule="evenodd"
+                            d="M4.28 3.22a.75.75 0 0 0-1.06 1.06L6.94 8l-3.72 3.72a.75.75 0 1 0 1.06 1.06L8 9.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L9.06 8l3.72-3.72a.75.75 0 0 0-1.06-1.06L8 6.94z"
+                            clip-rule="evenodd"
+                        />
+                    </svg>
+                </div>
                 <slot></slot>
             </div>
             <div v-if="clickToHide" class="panel-close-hint">{{ $t('close_panel_hint') }}</div>
@@ -66,6 +75,25 @@ function hide() {
     overflow: auto;
     padding: 2%;
     position: relative;
+}
+
+.panel-close-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    cursor: pointer;
+    fill: rgb(120, 120, 120);
+}
+
+.panel-close-btn:hover {
+    background: rgba(0, 0, 0, 0.2);
+    fill: white;
 }
 
 .panel-close-hint {

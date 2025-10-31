@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, nextTick, onBeforeUnmount, computed } from 'vue';
 import Titlebar from './components/Titlebar.vue';
 import { invokeCommand } from './utils';
 import { event } from '@tauri-apps/api';
 import { AppInfo } from './utils/types/AppInfo';
 import { useI18n } from 'vue-i18n';
+import { CustomEventName } from './utils/events';
 
 const { t } = useI18n();
 
@@ -23,14 +24,14 @@ const navItems = computed(() => [
     showDot: ref(false),
   },
 ]);
-const selectedIndex = ref(0)
-const navRefs = ref<HTMLElement[]>([])
+const selectedIndex = ref(0);
+const navRefs = ref<HTMLElement[]>([]);
 
 // Store underline position and width
 const underlineStyle = ref({
   left: '0px',
   width: '0px',
-})
+});
 
 async function updateUnderline() {
   await nextTick();
@@ -39,7 +40,7 @@ async function updateUnderline() {
     underlineStyle.value = {
       left: `${el.offsetLeft}px`,
       width: `${el.offsetWidth}px`,
-    }
+    };
   }
 }
 
@@ -52,35 +53,50 @@ async function updateDots() {
   if (!managerMode) return;
 
   event.listen('toolkit:update-available', (event) => {
-    console.log("toolkit update available: ", event.payload);
+    console.log('toolkit update available: ', event.payload);
     navItems.value[0].showDot.value = true;
   });
 }
 
 onMounted(async () => {
-  const appInfo = await invokeCommand('app_info') as AppInfo;
+  const appInfo = (await invokeCommand('app_info')) as AppInfo;
   managerMode.value = appInfo.is_manager;
 
   updateUnderline();
   updateDots();
 
-  window.addEventListener('resize', () => { updateUnderline() });
+  window.addEventListener('resize', () => {
+    updateUnderline();
+  });
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', () => { updateUnderline() });
-})
+  window.removeEventListener('resize', () => {
+    updateUnderline();
+  });
+});
+
+const handleClick = () => {
+  const evtName: CustomEventName = 'main-section-clicked';
+  event.emit(evtName);
+};
 </script>
 
 <template>
-  <background :animated="true"/>
+  <background :animated="true" />
   <Titlebar :showTitle="!managerMode" :bottomBorder="managerMode">
     <template #nav v-if="false">
-    <!-- <template #nav v-if="managerMode"> -->
+      <!-- <template #nav v-if="managerMode"> -->
       <nav class="nav-container">
         <ul class="nav-list">
-          <li v-for="(item, index) in navItems" :key="index" class="nav-item"
-            :class="{ active: selectedIndex === index }" @click="selectNav(index)" ref="navRefs">
+          <li
+            v-for="(item, index) in navItems"
+            :key="index"
+            class="nav-item"
+            :class="{ active: selectedIndex === index }"
+            @click="selectNav(index)"
+            ref="navRefs"
+          >
             {{ item.name }}
             <span class="red-dot" v-if="item.showDot.value"></span>
           </li>
@@ -89,7 +105,7 @@ onBeforeUnmount(() => {
       </nav>
     </template>
   </Titlebar>
-  <main>
+  <main @click="handleClick">
     <router-view />
   </main>
 </template>
@@ -98,11 +114,7 @@ onBeforeUnmount(() => {
 :root {
   margin: 0;
   padding: 0;
-  font-family:
-    "Microsoft YaHei",
-    "微软雅黑",
-    Segoe UI,
-    sans-serif;
+  font-family: 'Microsoft YaHei', '微软雅黑', Segoe UI, sans-serif;
   font-size: 14px;
   line-height: 24px;
   font-weight: 400;
@@ -142,39 +154,39 @@ main {
 
 /* global toolkit styling */
 .tooltip {
-    position: absolute;
-    bottom: calc(100% + 10px);
-    left: 0;
-    background-color: #333;
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    font-size: 12px;
-    white-space: nowrap;
-    z-index: 999;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    pointer-events: none;
-    opacity: 0.85;
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  background-color: #333;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 999;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+  opacity: 0.85;
 }
 .tooltip::after {
-    content: '';
-    position: absolute;
-    top: 100%;
-    left: 12px;
-    border-width: 6px;
-    border-style: solid;
-    border-color: #333 transparent transparent transparent;
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 12px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: #333 transparent transparent transparent;
 }
 
 .info-label {
-  --uno: "c-regular";
+  --uno: 'c-regular';
   font-weight: bold;
   font-size: clamp(8px, 2.6vh, 22px);
   margin-inline: 1vw;
 }
 
 .sub-info-label {
-  --uno: "c-secondary";
+  --uno: 'c-secondary';
   font-size: clamp(6px, 2.2vh, 20px);
   margin-inline: 1vw;
 }
@@ -210,7 +222,7 @@ main {
   position: relative;
   text-align: center;
   white-space: pre-line;
-  --uno: "c-disabled";
+  --uno: 'c-disabled';
   cursor: pointer;
   font-weight: 500;
   font-size: 2.6vh;
@@ -219,14 +231,14 @@ main {
 }
 
 .nav-item.active {
-  --uno: "c-header";
+  --uno: 'c-header';
 }
 
 .underline {
   position: absolute;
   bottom: 0;
   height: 3px;
-  --uno: "bg-primary";
+  --uno: 'bg-primary';
   transition: left 0.3s ease, width 0.3s ease;
 }
 

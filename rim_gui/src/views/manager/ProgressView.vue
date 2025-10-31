@@ -11,7 +11,7 @@ const { routerBack, routerPush, routerPushAndClearCache } = useCustomRouter();
 // ===== progress bar related section =====
 const progress = ref(0);
 const mainProgressPayload = ref<ProgressPayload | null>(null);
-const showSubProgress = ref(false);
+const showSubProgress = ref(false); 
 const hideSubProgressTimeout = ref<NodeJS.Timeout | null>(null);
 const subProgress = ref(0);
 const subProgressPayload = ref<ProgressPayload | null>(null);
@@ -173,7 +173,7 @@ watch(() => managerConf.getOperation(), (newOp) => {
       <base-progress w="full" h="4vh" :value="subProgress" :kind="subProgressPayload?.style.toString()"
         :length="subProgressPayload?.length" :transition="false" />
     </div>
-    <base-details my="2vh" mx="0.5vw" :title="$t('show_details')">
+    <base-details my="2vh" mx="0.5vw" :title="$t('show_details')" :open="true">
       <base-card h="40vh" mx="0.5vw" my="0.5vh">
         <div ref="scrollBox" flex="1" overflow="auto" h="full">
           <p my="0.5rem" v-for="item in output" :key="item">{{ item }}</p>

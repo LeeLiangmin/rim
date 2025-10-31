@@ -184,7 +184,7 @@ fn main() -> Result<ExitCode> {
                 clear,
             }
         }
-        "run" => {
+        "r" | "run" => {
             let mut is_extra_arg = false;
             let mut extra_args = vec![];
             let mut mode = RunMode::default();

@@ -53,13 +53,13 @@ pub(super) fn main(
 
 #[tauri::command]
 async fn get_configuration() -> BaseConfiguration {
-    let manifest = if let Some(cached) = TOOLKIT_MANIFEST.get() {
-        Some(&*cached.read().await)
+    let manifest_owned = if let Some(cached) = TOOLKIT_MANIFEST.get() {
+        Some(cached.read().await.clone())
     } else {
         warn!("missing cached toolkit manifest when fetching configuration");
         None
     };
-    BaseConfiguration::new(AppInfo::get_installed_dir(), manifest)
+    BaseConfiguration::new(AppInfo::get_installed_dir(), manifest_owned.as_ref())
 }
 
 #[tauri::command]
