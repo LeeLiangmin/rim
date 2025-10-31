@@ -483,17 +483,41 @@ impl ApplicationShortcut<'_> {
     #[cfg(windows)]
     fn create_shortcut_(&self, desktop_dir: &Path, _application_dir: Option<&Path>) -> Result<()> {
         let shortcut_path = desktop_dir.join(format!("{}.lnk", self.name));
-        let weird_powershell_cmd = format!(
-            "$s=(New-Object -COM WScript.Shell).CreateShortcut('{}');$s.TargetPath='{}';$s.Save()",
-            shortcut_path.display(),
-            self.path.display(),
+        // Ensure Desktop directory exists before creating the shortcut
+        ensure_dir(desktop_dir)?;
+
+        // Build a robust PowerShell command with proper flags and quoting
+        fn ps_escape_single_quotes(s: &str) -> String { s.replace("'", "''") }
+        let target_str = ps_escape_single_quotes(&format!("{}", self.path.display()));
+        let shortcut_str = ps_escape_single_quotes(&format!("{}", shortcut_path.display()));
+        let working_dir = self
+            .path
+            .parent()
+            .map(|p| ps_escape_single_quotes(&format!("{}", p.display())))
+            .unwrap_or_default();
+        let icon_opt = None::<String>;
+        let icon_set = icon_opt
+            .as_deref()
+            .map(|icon| format!("$sc.IconLocation='{}';", icon))
+            .unwrap_or_default();
+
+        let ps_script = format!(
+            "$sh=New-Object -ComObject WScript.Shell;$sc=$sh.CreateShortcut('{shortcut}');$sc.TargetPath='{target}';{icon}$sc.WorkingDirectory='{wd}';$sc.Save()",
+            shortcut = shortcut_str,
+            target = target_str,
+            icon = icon_set,
+            wd = working_dir,
         );
-        if crate::run!("powershell", weird_powershell_cmd).is_err() {
-            bail!(
-                "unable to create a shortcut for '{}', skipping...",
-                self.name
-            );
+
+        // Try multiple PowerShell entrypoints to improve compatibility across environments
+        let mut last_err: Option<anyhow::Error> = None;
+        for pwsh in ["powershell", "powershell.exe", "pwsh"] {
+            match crate::run!(pwsh, "-NoProfile", "-NonInteractive", "-Command", &ps_script) {
+                Ok(_) => { last_err = None; break; },
+                Err(e) => { last_err = Some(e); }
+            }
         }
+        if let Some(e) = last_err { bail!("unable to create a shortcut for '{}': {e}", self.name); }
 
         // TODO: add windows menu shortcut, but I currently don't know how
         Ok(())

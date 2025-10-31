@@ -13,6 +13,7 @@ use rim::{
     components::Component,
     AppInfo, InstallConfiguration, UninstallConfiguration,
 };
+use rim_common::utils as rc_utils;
 use rim_common::types::ToolkitManifest;
 use serde::{Deserialize, Serialize};
 use tauri::{App, AppHandle, Manager, Window, WindowUrl};
@@ -89,6 +90,24 @@ pub(crate) async fn uninstall_toolkit_(window: tauri::Window, remove_self: bool)
 
     let config = UninstallConfiguration::init(GuiProgress::new(window.app_handle()))?;
     config.uninstall(remove_self)?;
+
+    // Remove Windows desktop shortcut when uninstalling the manager itself
+    if remove_self {
+        let _ = rc_utils::ApplicationShortcut {
+            name: rc_utils::build_cfg_locale("app_name"),
+            path: PathBuf::new(),
+            icon: None,
+            comment: None,
+            generic_name: None,
+            field_code: None,
+            startup_notify: false,
+            startup_wm_class: None,
+            categories: &[],
+            mime_type: &[],
+            keywords: &[],
+        }
+        .remove();
+    }
 
     window.emit(ON_COMPLETE_EVENT, ())?;
     Ok(())

@@ -23,8 +23,8 @@ async function closeWindow() {
           <div c="secondary" text="3vh">{{ $t('post_installation_hint') }}</div>
         </div>
         <div flex="~ col" gap="4vh">
-          <base-check-box v-model="runApp" :title="$t('post_installation_open')" />
-          <base-check-box v-model="createShortcut" :title="$t('post_installation_create_shortcut')" />
+          <base-check-box v-model="runApp" :title="$t('post_installation_open')" @titleClick="runApp = !runApp" />
+          <base-check-box v-model="createShortcut" :title="$t('post_installation_create_shortcut')" @titleClick="createShortcut = !createShortcut" />
         </div>
         <base-button theme="primary" w="20vw" position="fixed" bottom="5vh" @click="closeWindow()">
           {{ $t('finish') }}

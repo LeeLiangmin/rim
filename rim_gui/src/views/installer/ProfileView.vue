@@ -100,6 +100,18 @@ function selectProfile(name: string) {
   display: flex;
   flex-direction: column;
   text-align: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  padding: 2vh 1.6vw;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.profile-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.1);
+  border-color: rgba(0, 0, 0, 0.1);
 }
 
 .profile-pic {
@@ -109,16 +121,19 @@ function selectProfile(name: string) {
 
 .profile-name {
   margin-top: 5%;
-  font-weight: bolder;
-  font-size: 4vh;
+  font-weight: 800;
+  font-size: clamp(18px, 3.8vh, 28px);
   --uno: 'c-regular';
 }
 
 .profile-desc {
-  height: 40%;
-  margin-top: 8%;
-  font-size: clamp(8px, 2.3vh, 20px);
+  height: auto;
+  margin-top: 6%;
+  font-size: clamp(12px, 2.1vh, 16px);
   --uno: 'c-regular';
   line-height: 1.8;
+  max-height: 20vh;
+  overflow: auto;
+  padding-right: 4px; 
 }
 </style>

@@ -42,7 +42,7 @@ function handleUninstall() {
       </section>
     </base-card>
     <div m="l-1vw t-0.5rem" mb="6%">
-      <base-check-box v-model="isUninstallManger" :title="$t('uninstall_self_question')" />
+      <base-check-box v-model="isUninstallManger" :title="$t('uninstall_self_question')" @titleClick="isUninstallManger = !isUninstallManger" />
     </div>
     <page-nav-buttons :backLabel="$t('cancel')" :nextLabel="$t('uninstall')" @back-clicked="routerBack" @next-clicked="handleUninstall" />
   </div>
