@@ -17,9 +17,14 @@ const groupComponents: Ref<CheckGroup<Component>[]> = ref([]);
 const checkedAllBundle = ref(false);
 
 const checkedAll = computed(() => {
-  return groupComponents.value.every((item) =>
-    item.items.every((i) => i.checked)
-  );
+  // 排除 IDE 组（单选模式）和 required 项来计算全选状态
+  return groupComponents.value
+    .filter((group) => group.label !== 'IDE')
+    .every((group) => 
+      group.items
+        .filter((item) => !item.value.required) // 排除 required 项
+        .every((i) => i.checked)
+    );
 });
 const checkedEmpty = computed(() => {
   return groupComponents.value.every((item) =>
@@ -95,11 +100,17 @@ function handleComponentsChange(items: CheckGroupItem<Component>[]) {
 }
 
 function handleSelectAll() {
-  const target = checkedAll.value;
+  const target = !checkedAll.value;
   groupComponents.value.forEach((group) => {
+    const isRadioGroup = group.label === 'IDE';
     group.items.forEach((item) => {
+      // 跳过 disabled 的项（required 且未安装的项）
       if (item.disabled) return;
-      item.checked = !target;
+      // 单选模式下，跳过 IDE 组
+      if (isRadioGroup) return;
+      // required 的项不能取消选中
+      if (!target && item.value.required) return;
+      item.checked = target;
     });
   });
 }

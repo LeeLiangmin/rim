@@ -2,14 +2,14 @@
 # This file was automatically generated.
 # 此文件是自动生成的.
 rustup-dist-server = "https://rust-dist.obs.cn-north-4.myhuaweicloud.com/bisheng"
-rustup-update-root = "https://xuanwu.base.atomgit.com/rustup"
+rustup-update-root = "https://mirror.xuanwu.openatom.cn/rustup"
 name = "Rust 中国社区发行版 (毕昇)"
 version = "bisheng v1.72.0"
 edition = "bisheng"
 
 [cargo-registry]
 name = "xuanwu-sparse"
-index = "sparse+https://xuanwu.base.atomgit.com/index/"
+index = "sparse+https://mirror.xuanwu.openatom.cn/index/"
 
 [toolchain]
 channel = "1.72.0"

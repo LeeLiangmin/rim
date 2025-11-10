@@ -24,7 +24,7 @@ defineProps({
 
 const container = ref<HTMLElement | null>(null)
 const leftPanel = ref<HTMLElement | null>(null)
-const leftPixel = ref(300)
+const leftPixel = ref(450)
 const minWidth = 100
 const isDragging = ref(false)
 

@@ -15,6 +15,7 @@ use crate::core::baked_in_manifest_raw;
 use crate::core::os::add_to_path;
 use crate::{default_cargo_registry, default_rustup_dist_server, default_rustup_update_root};
 use anyhow::{anyhow, bail, Context, Result};
+use log::info;
 use rim_common::types::{
     CargoRegistry, TomlParser, ToolInfo, ToolMap, ToolSource, ToolkitManifest,
 };
@@ -196,11 +197,35 @@ impl<T> InstallConfiguration<'_, T> {
     ///
     /// If `maybe_file` is a path to compressed file, this will try to extract it to `dest`;
     /// otherwise this will copy that file into dest.
+    #[allow(dead_code)]
     fn extract_or_copy_to(&self, maybe_file: &Path, dest: &Path) -> Result<PathBuf> {
         if let Ok(extractable) = utils::Extractable::load(maybe_file, None) {
-            extractable
-                .quiet(GlobalOpts::get().quiet)
-                .extract_then_skip_solo_dir(dest, Some("bin"))
+            // For VSCode and similar tools, we want to skip solo directories until we find
+            // the actual tool directory (which contains bin/, Code.exe, etc.)
+            // Using "bin" as stop keyword will stop at the directory containing bin/
+            // Note: extract_then_skip_solo_dir internally calls extract_to, so we don't need to call it separately
+            let mut extractable = extractable.quiet(GlobalOpts::get().quiet);
+            let extracted_path = extractable.extract_then_skip_solo_dir(dest, Some("bin"))?;
+            
+            // Ensure the extracted path is actually a directory
+            if !extracted_path.is_dir() {
+                // If it's not a directory, try to find the parent directory that contains bin/
+                if let Some(parent) = extracted_path.parent() {
+                    let bin_in_parent = parent.join("bin");
+                    if bin_in_parent.exists() && bin_in_parent.is_dir() {
+                        info!("Found bin directory in parent, using parent directory: {}", parent.display());
+                        return Ok(parent.to_path_buf());
+                    }
+                }
+                anyhow::bail!(
+                    "Extracted path is not a directory: {} (exists: {}, is_file: {})",
+                    extracted_path.display(),
+                    extracted_path.exists(),
+                    extracted_path.is_file()
+                );
+            }
+            
+            Ok(extracted_path)
         } else {
             utils::copy_into(maybe_file, dest)
         }
@@ -208,6 +233,45 @@ impl<T> InstallConfiguration<'_, T> {
 }
 
 impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
+    /// Perform extraction or copy action base on the given path, with progress reporting.
+    ///
+    /// If `maybe_file` is a path to compressed file, this will try to extract it to `dest`;
+    /// otherwise this will copy that file into dest.
+    fn extract_or_copy_to_with_progress(&self, maybe_file: &Path, dest: &Path) -> Result<PathBuf> {
+        if let Ok(mut extractable) = utils::Extractable::load(maybe_file, None) {
+            // For VSCode and similar tools, we want to skip solo directories until we find
+            // the actual tool directory (which contains bin/, Code.exe, etc.)
+            // Using "bin" as stop keyword will stop at the directory containing bin/
+            // Note: extract_then_skip_solo_dir internally calls extract_to, so we don't need to call it separately
+            extractable = extractable
+                .quiet(GlobalOpts::get().quiet)
+                .with_progress_handler(Box::new(self.progress_handler.clone()));
+            let extracted_path = extractable.extract_then_skip_solo_dir(dest, Some("bin"))?;
+            
+            // Ensure the extracted path is actually a directory
+            if !extracted_path.is_dir() {
+                // If it's not a directory, try to find the parent directory that contains bin/
+                if let Some(parent) = extracted_path.parent() {
+                    let bin_in_parent = parent.join("bin");
+                    if bin_in_parent.exists() && bin_in_parent.is_dir() {
+                        info!("Found bin directory in parent, using parent directory: {}", parent.display());
+                        return Ok(parent.to_path_buf());
+                    }
+                }
+                anyhow::bail!(
+                    "Extracted path is not a directory: {} (exists: {}, is_file: {})",
+                    extracted_path.display(),
+                    extracted_path.exists(),
+                    extracted_path.is_file()
+                );
+            }
+            
+            Ok(extracted_path)
+        } else {
+            utils::copy_into(maybe_file, dest)
+        }
+    }
+
     pub fn new(install_dir: &'a Path, manifest: &'a ToolkitManifest, handler: T) -> Result<Self> {
         let install_record = if InstallationRecord::exists() {
             // TODO: handle existing record, maybe we want to enter manager mode directly?
@@ -484,8 +548,8 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
         info: &ToolInfo,
     ) -> Result<ToolRecord> {
         let temp_dir = self.create_temp_dir("download")?;
-        let downloaded_file_name = if let Some(name) = info.filename() {
-            name
+        let mut downloaded_file_name: String = if let Some(name) = info.filename() {
+            name.to_string()
         } else {
             url.path_segments()
                 .ok_or_else(|| anyhow!("unsupported url format '{url}'"))?
@@ -493,7 +557,31 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
                 // Sadly, a path segment could be empty string, so we need to filter that out
                 .filter(|seg| !seg.is_empty())
                 .ok_or_else(|| anyhow!("'{url}' doesn't appear to be a downloadable file"))?
+                .to_string()
         };
+        
+        // If the downloaded file name doesn't have an extension, try to infer it from the URL or tool name
+        if !downloaded_file_name.contains('.') {
+            // Check if URL contains hints about file type
+            let url_str = url.as_str();
+            if url_str.contains("win32-x64-archive") || url_str.contains("linux-x64") || url_str.contains("linux-arm64") {
+                // VSCode archives are zip files
+                downloaded_file_name = format!("{}.zip", downloaded_file_name);
+            } else if url_str.contains(".zip") || url_str.contains("archive") {
+                downloaded_file_name = format!("{}.zip", downloaded_file_name);
+            } else if url_str.contains(".tar.gz") || url_str.contains(".tgz") {
+                downloaded_file_name = format!("{}.tar.gz", downloaded_file_name);
+            } else if url_str.contains(".tar.xz") {
+                downloaded_file_name = format!("{}.tar.xz", downloaded_file_name);
+            } else if url_str.contains(".7z") {
+                downloaded_file_name = format!("{}.7z", downloaded_file_name);
+            }
+            // If still no extension and it's a known tool, try to infer from tool name
+            else if name == "vscode" || name == "vscodium" || name == "codearts-rust" {
+                downloaded_file_name = format!("{}.zip", downloaded_file_name);
+            }
+        }
+        
         let dest = temp_dir.path().join(downloaded_file_name);
         utils::DownloadOpt::new(name, Box::new(self.progress_handler.clone()))
             .with_proxy(self.manifest.proxy_config().cloned())
@@ -515,7 +603,17 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
             path.to_path_buf()
         } else if utils::Extractable::is_supported(path) {
             let extract_temp = self.create_temp_dir(name)?;
-            let tool_installer_path = self.extract_or_copy_to(path, extract_temp.path())?;
+            let tool_installer_path = self.extract_or_copy_to_with_progress(path, extract_temp.path())?;
+            // Verify the extracted path is a directory
+            if !tool_installer_path.is_dir() {
+                anyhow::bail!(
+                    "Extracted path for '{}' is not a directory: {} (exists: {}, is_file: {})",
+                    name,
+                    tool_installer_path.display(),
+                    tool_installer_path.exists(),
+                    tool_installer_path.is_file()
+                );
+            }
             // we don't need the download temp dir anymore,
             // we should keep the extraction temp dir alive instead.
             maybe_temp = Some(extract_temp);

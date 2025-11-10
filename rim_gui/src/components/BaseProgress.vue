@@ -60,9 +60,14 @@ function progressFormat(kind: ProgressKind, value: number, length?: number): str
     case 'bytes':
       return `${formatBytes(value)}${length ? ' | ' + formatBytes(length) : ''}`;
     case 'len':
+      // Convert to percentage (0-100) and remove decimal places
+      if (length && length > 0) {
+        const percentage = Math.round((value / length) * 100);
+        return `${percentage}%`;
+      }
       return `${value}${length ? ' | ' + length : ''}`;
     case 'percentage':
-      return value.toFixed(2) + '%';
+      return Math.round(value) + '%';
     default:
       // spinner and hidden progess bar doesn't need value labels
       return '';

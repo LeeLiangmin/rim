@@ -111,6 +111,8 @@
   "list_option": "显示组件/套件列表",
   "loading": "正在加载",
   "loading_archive_info": "正在提取 %{kind} 压缩包 '%{path}'",
+  "extracting_file": "正在解压文件 '%{file}'",
+  "extraction_complete": "解压完成",
   "manage_components": "组件管理",
   "manage_toolkit": "套件管理",
   "manager_update_channel": "管理器更新频道",

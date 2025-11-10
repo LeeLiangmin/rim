@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted, nextTick } from 'vue';
 
 const props = defineProps({
     title: {
@@ -23,10 +23,38 @@ const toggle = () => {
     emit('toggle', isOpen.value);
 };
 
+// Watch for prop changes
+watch(() => props.open, (newValue) => {
+    isOpen.value = newValue;
+});
+
 // Calculate content height when opened
 watch(isOpen, (newValue) => {
     if (newValue && contentRef.value) {
-        contentHeight.value = contentRef.value.scrollHeight;
+        // When opening, calculate the height after DOM update
+        requestAnimationFrame(() => {
+            if (contentRef.value) {
+                contentHeight.value = contentRef.value.scrollHeight;
+            }
+        });
+    } else {
+        // When closing, ensure we have the current height for smooth transition
+        if (contentRef.value && contentHeight.value === 0) {
+            contentHeight.value = contentRef.value.scrollHeight;
+        }
+    }
+});
+
+// Initialize height if component starts open
+onMounted(() => {
+    if (props.open && contentRef.value) {
+        nextTick(() => {
+            requestAnimationFrame(() => {
+                if (contentRef.value) {
+                    contentHeight.value = contentRef.value.scrollHeight;
+                }
+            });
+        });
     }
 });
 </script>
@@ -87,11 +115,14 @@ watch(isOpen, (newValue) => {
 .content {
     max-height: 0;
     overflow: hidden;
-    transition: max-height 0.4s ease;
+    opacity: 0;
+    transition: 
+        max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .content.open {
-    overflow: visible;
-    max-height: var(--content-height, 100%);
+    max-height: var(--content-height, 2000px);
+    opacity: 1;
 }
 </style>

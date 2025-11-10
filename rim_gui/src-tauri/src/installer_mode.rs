@@ -11,6 +11,7 @@ use crate::command::with_shared_commands;
 use crate::common::{self, expected_manifest, BaseConfiguration, TOOLKIT_MANIFEST};
 use crate::error::Result;
 use rim::components::Component;
+use rim::try_it;
 use rim::{get_toolkit_manifest, ToolkitManifestExt};
 use rim_common::types::{ToolInfo, ToolSource, ToolkitManifest};
 use rim_common::utils;
@@ -207,9 +208,9 @@ fn post_installation_opts(
         .create()?;
     }
 
+    std::env::set_var("MODE", "manager");
     if open {
-        std::env::set_var("MODE", "manager");
-        app.restart();
+        try_it(Some(&install_dir))?;
     } else {
         app.exit(0);
     }

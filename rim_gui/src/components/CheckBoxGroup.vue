@@ -5,9 +5,10 @@ import { CheckGroup, CheckGroupItem } from '@/utils';
 type Props<T> = {
   expand: boolean;
   group: CheckGroup<T>;
+  radio?: boolean; // 单选模式
 };
 
-const { expand, group } = defineProps<Props<unknown>>();
+const { expand, group, radio = false } = defineProps<Props<unknown>>();
 const emit = defineEmits(['itemClick', 'change']);
 
 const groupExpand = ref(expand);
@@ -20,12 +21,30 @@ function handleExpandClick() {
   groupExpand.value = !groupExpand.value;
 }
 
-function handleCheckAllClick() {
-  const target = isCheckedAll.value;
+function handleCheckAllClick(newValue: boolean) {
+  if (radio) {
+    // 单选模式下，全选功能禁用
+    return;
+  }
   group.items.forEach((checkItem) => {
     if (checkItem.disabled) return;
-    checkItem.checked = !target;
+    checkItem.checked = newValue;
   });
+}
+
+function handleItemToggle(item: CheckGroupItem<unknown>) {
+  if (radio && !item.checked) {
+    // 单选模式：选中当前项时，取消同组其他项的选中
+    group.items.forEach((otherItem) => {
+      if (otherItem !== item && !otherItem.disabled) {
+        otherItem.checked = false;
+      }
+    });
+    item.checked = true;
+  } else {
+    // 多选模式：正常切换
+    item.checked = !item.checked;
+  }
 }
 
 function handleItemClick<T>(item: CheckGroupItem<T>) {
@@ -53,12 +72,19 @@ watch(group.items, (newValue) => {
         :class="{ 'rotate-180': groupExpand }"
         @click="handleExpandClick"
       />
-      <base-check-box w="full" @titleClick="handleExpandClick" :title="group.label" :isGroup="true">
+      <base-check-box 
+        w="full" 
+        @titleClick="handleExpandClick" 
+        :title="group.label" 
+        :isGroup="true"
+        :modelValue="isCheckedAll"
+        @update:modelValue="handleCheckAllClick"
+      >
         <template #icon>
           <span
+            v-if="!radio"
             flex="~ items-center justify-center"
             h="full"
-            @click="handleCheckAllClick"
           >
             <i class="i-mdi:check" v-show="isCheckedAll" c="active" />
             <i
@@ -76,7 +102,8 @@ watch(group.items, (newValue) => {
           flex="~ items-center"
           v-for="item of group.items"
           :key="item.label"
-          v-model="item.checked"
+          :modelValue="item.checked"
+          @update:modelValue="handleItemToggle(item)"
           :title="item.label"
           :disabled="item.disabled"
           :label-component="item.labelComponent"

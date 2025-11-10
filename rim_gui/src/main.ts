@@ -18,6 +18,6 @@ async function setup() {
 }
 
 // disable context menu on right click
-document.addEventListener('contextmenu', event => event.preventDefault());
+// document.addEventListener('contextmenu', event => event.preventDefault());
 
 setup();

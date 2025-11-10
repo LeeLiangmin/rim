@@ -11,6 +11,7 @@ use crate::core::install::InstallConfiguration;
 use crate::core::os::add_to_path;
 use anyhow::Result;
 use rim_common::utils;
+use log::{info, warn};
 
 #[derive(Debug)]
 pub(crate) struct VSCodeInstaller<'a> {
@@ -26,20 +27,63 @@ pub(crate) struct VSCodeInstaller<'a> {
 
 impl VSCodeInstaller<'_> {
     pub(crate) fn install<T>(&self, path: &Path, config: &InstallConfiguration<T>) -> Result<Vec<PathBuf>> {
+        // Ensure the path exists and is a directory
+        if !path.exists() {
+            anyhow::bail!("VSCode installation path does not exist: {}", path.display());
+        }
+        if !path.is_dir() {
+            // Provide more context about what we received
+            let error_msg = if path.is_file() {
+                format!(
+                    "VSCode installation path is a file, not a directory: {} (expected a directory after extraction)",
+                    path.display()
+                )
+            } else {
+                format!(
+                    "VSCode installation path is not a directory: {} (exists: {}, is_file: {})",
+                    path.display(),
+                    path.exists(),
+                    path.is_file()
+                )
+            };
+            anyhow::bail!("{}", error_msg);
+        }
+
         // Step 1: Move the root of the directory into `tools` directory
         let vscode_dir = config.tools_dir().join(self.tool_name);
+        info!("Moving VSCode from {} to {}", path.display(), vscode_dir.display());
         utils::move_to(path, &vscode_dir, true)?;
 
-        // Step 2: Add the `bin/` folder to path
+        // Step 2: Add the `bin/` folder to path (contains code.cmd on Windows or code script on Unix)
         let bin_dir = vscode_dir.join("bin");
         add_to_path(config, &bin_dir)?;
 
         // Step 2.5: Make sure the executables have execute permission
         // (depending on the build, sometimes they don't...)
-        let exec_script = bin_dir.join(self.cmd);
-        utils::set_exec_permission(&exec_script)?;
-        let actual_bin = vscode_dir.join(self.binary_name);
-        utils::set_exec_permission(&actual_bin)?;
+        #[cfg(windows)]
+        {
+            // On Windows, ensure code.cmd in bin/ directory is executable
+            let code_cmd = bin_dir.join(format!("{}.cmd", self.cmd));
+            if code_cmd.exists() {
+                utils::set_exec_permission(&code_cmd)?;
+            }
+            // Ensure Code.exe (main executable) is executable
+            let code_exe = vscode_dir.join(format!("{}.exe", self.binary_name));
+            if code_exe.exists() {
+                utils::set_exec_permission(&code_exe)?;
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let exec_script = bin_dir.join(self.cmd);
+            if exec_script.exists() {
+                utils::set_exec_permission(&exec_script)?;
+            }
+            let actual_bin = vscode_dir.join(self.binary_name);
+            if actual_bin.exists() {
+                utils::set_exec_permission(&actual_bin)?;
+            }
+        }
 
         // Step 3: Create a shortcuts
         // Shortcuts are not important, make sure it won't throw error even if it fails.
@@ -50,9 +94,15 @@ impl VSCodeInstaller<'_> {
         icon_path.push("media");
         icon_path.push("code-icon.svg");
 
+        // Determine the correct binary path for shortcut
+        #[cfg(windows)]
+        let shortcut_bin = vscode_dir.join(format!("{}.exe", self.binary_name));
+        #[cfg(not(windows))]
+        let shortcut_bin = vscode_dir.join(self.binary_name);
+
         let app_sc = utils::ApplicationShortcut {
             name: self.shortcut_name,
-            path: actual_bin,
+            path: shortcut_bin,
             icon: icon_path.exists().then_some(icon_path),
             comment: Some("Code Editing. Redefined."),
             generic_name: Some("Text Editor"),

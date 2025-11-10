@@ -44,37 +44,58 @@ const handleInput = (event: Event) => {
 <style scoped>
 .input-label {
     --uno: 'c-regular';
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
     font-weight: 500;
-    font-size: clamp(0.5rem, 2.6vh, 1.5rem);
+    font-size: clamp(0.875rem, 2.4vh, 1.125rem);
     flex-shrink: 0;
     display: flex;
     gap: 0.5rem;
+    color: #1d1d1f;
+    letter-spacing: -0.01em;
 }
 
 .input-wrapper {
     position: relative;
     flex-grow: 1;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
 }
 
 .input-field {
     width: 100%;
-    background: rgba(255, 255, 255, .7);
-    border: 1px solid rgba(0, 0, 0, .1);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-    font-size: clamp(100%, 2vh, 20px);
-    padding: 0.3rem 1rem;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+    font-size: clamp(14px, 2vh, 18px);
+    padding: 14px 18px;
     box-sizing: border-box;
-    border-radius: 20px;
-    transition:
-        border-color 0.2s,
-        box-shadow 0.2s;
+    border-radius: 12px;
+    color: #1d1d1f;
+    font-weight: 400;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    -webkit-font-smoothing: antialiased;
+    backdrop-filter: blur(20px);
+}
+
+.input-field::placeholder {
+    color: rgba(142, 142, 147, 0.6);
+}
+
+.input-field:hover:not(:disabled) {
+    border-color: rgba(0, 0, 0, 0.12);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.06);
 }
 
 .input-field:focus {
-    --uno: 'b-active';
     outline: none;
+    border-color: rgba(90, 200, 250, 0.5);
+    box-shadow: 0 4px 16px rgba(90, 200, 250, 0.15), 0 2px 6px rgba(0, 0, 0, 0.08);
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.input-field:disabled {
+    background: rgba(142, 142, 147, 0.08);
+    color: rgba(142, 142, 147, 0.6);
+    cursor: not-allowed;
 }
 
 .fade-enter-active,

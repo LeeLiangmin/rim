@@ -65,7 +65,7 @@ watch(locale, async (_newVal) => await refreshLabels());
     <base-panel width="60%" :show="showCustomizePanel" @close="showCustomizePanel = false">
       <div flex="~ col">
         <b class="option-label">{{ $t('toolkit_manifest_path') }}</b>
-        <inputton m="1rem" h="5vh" v-bind:modelValue="toolkitManifestPath" :button-label="$t('select_file')"
+        <inputton m="1rem" h="6vh" v-bind:modelValue="toolkitManifestPath" :button-label="$t('select_file')"
           @change="(event: Event) => toolkitManifestPath = (event.target as HTMLInputElement).value"
           @keydown.enter="(event: Event) => toolkitManifestPath = (event.target as HTMLInputElement).value"
           @button-click="pickToolkitSource" />

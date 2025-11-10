@@ -106,6 +106,10 @@ onMounted(async () => {
         ...subProgressPayload.value,
         message: event.payload
       };
+      // Set progress to 100% to trigger hide logic
+      if (subProgressPayload.value.length) {
+        subProgress.value = subProgressPayload.value.length;
+      }
     }
   });
 
@@ -169,7 +173,7 @@ watch(() => managerConf.getOperation(), (newOp) => {
       :length="mainProgressPayload?.length" />
 
     <div v-if="showSubProgress">
-      <p class="sub-info-label">{{ subProgressPayload?.message }}</p>
+      <p class="sub-info-label file-name-label" :title="subProgressPayload?.message">{{ subProgressPayload?.message }}</p>
       <base-progress w="full" h="4vh" :value="subProgress" :kind="subProgressPayload?.style.toString()"
         :length="subProgressPayload?.length" :transition="false" />
     </div>

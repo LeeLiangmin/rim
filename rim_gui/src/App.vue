@@ -191,6 +191,13 @@ main {
   margin-inline: 1vw;
 }
 
+.file-name-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 .footer-label {
   --uno: c-secondary;
   position: fixed;

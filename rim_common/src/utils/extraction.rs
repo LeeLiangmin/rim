@@ -26,6 +26,7 @@ pub struct Extractable<'a> {
     path: &'a Path,
     kind: ExtractableKind,
     quiet: bool,
+    progress_handler: Option<Box<dyn ProgressHandler>>,
 }
 
 impl<'a> Extractable<'a> {
@@ -81,19 +82,33 @@ impl<'a> Extractable<'a> {
             path,
             kind,
             quiet: false,
+            progress_handler: None,
         })
     }
 
     setter!(quiet(self.quiet, bool));
+    
+    /// Set a custom progress handler for extraction progress.
+    pub fn with_progress_handler(mut self, handler: Box<dyn ProgressHandler>) -> Self {
+        self.progress_handler = Some(handler);
+        self
+    }
 
     /// Extract current file into a specific directory.
     ///
     /// This will extract file under the `root`, make sure it's an empty folder before using this function.
     pub fn extract_to(&mut self, root: &Path) -> Result<()> {
-        let mut helper = ExtractHelper {
+        let handler: Box<dyn ProgressHandler> = if let Some(ref mut ph) = self.progress_handler {
+            // Take the handler if available
+            std::mem::replace(ph, Box::new(CliProgress::default()))
+        } else {
+            Box::new(CliProgress::default())
+        };
+        
+        let mut helper = ExtractHelperBoxed {
             file_path: self.path,
             output_dir: root,
-            handler: CliProgress::default(),
+            handler,
         };
 
         match &mut self.kind {
@@ -186,17 +201,21 @@ fn filename_matches_keyword<S: AsRef<OsStr>>(path: &Path, keyword: S) -> bool {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct ExtractHelper<'a, T: ProgressHandler> {
+struct ExtractHelperBoxed<'a> {
     file_path: &'a Path,
     output_dir: &'a Path,
-    handler: T,
+    handler: Box<dyn ProgressHandler>,
 }
 
-impl<T: ProgressHandler> ExtractHelper<'_, T> {
+impl ExtractHelperBoxed<'_> {
     fn start_progress_bar(&mut self, style: ProgressKind) -> Result<()> {
-        self.handler.start(
-            format!("extracting file '{}'", self.file_path.display()),
+        // Extract only the file name from the path, similar to download progress
+        let file_name = self.file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_else(|| self.file_path.to_str().unwrap_or("unknown"));
+        self.handler.as_mut().start(
+            t!("extracting_file", file = file_name).to_string(),
             style,
         )?;
         Ok(())
@@ -207,7 +226,7 @@ impl<T: ProgressHandler> ExtractHelper<'_, T> {
     }
 
     fn end_progress_bar(&self) -> Result<()> {
-        self.handler.finish("extraction complete.".into())
+        self.handler.finish(t!("extraction_complete").to_string())
     }
 
     fn extract_zip(&mut self, archive: &mut ZipArchive<File>) -> Result<()> {

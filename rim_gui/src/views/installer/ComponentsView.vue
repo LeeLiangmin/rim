@@ -17,9 +17,14 @@ const selectComponentId = ref(0);
 const groupComponents: Ref<CheckGroup<Component>[]> = ref([]);
 const checkedAllBundle = ref(false);
 const checkedAll = computed(() => {
-  return groupComponents.value.every((item) =>
-    item.items.every((i) => i.checked)
-  );
+  // 排除 IDE 组（单选模式）和 required 项来计算全选状态
+  return groupComponents.value
+    .filter((group) => group.label !== 'IDE')
+    .every((group) => 
+      group.items
+        .filter((item) => !item.value.required) // 排除 required 项
+        .every((i) => i.checked)
+    );
 });
 const checkedEmpty = computed(() => {
   return groupComponents.value.every((item) =>
@@ -78,9 +83,19 @@ function handleComponentsChange(items: CheckGroupItem<Component>[]) {
   let dependencies: [string, boolean][] = [];
 
   groupComponents.value.forEach((group) => {
+    const isRadioGroup = group.label === 'IDE';
+    
     group.items.forEach((item) => {
       const findItem = items.find((i) => i.value.id === item.value.id);
       if (findItem) {
+        // 单选模式：如果当前项被选中，需要取消同组其他项的选中
+        if (isRadioGroup && findItem.checked && !item.checked) {
+          group.items.forEach((otherItem) => {
+            if (otherItem !== item && !otherItem.disabled) {
+              otherItem.checked = false;
+            }
+          });
+        }
         item.checked = findItem.checked;
         dependencies = dependencies.concat(componentUtils(item.value).requires().map(name => [name, findItem.checked]));
       }
@@ -103,8 +118,14 @@ function handleComponentsChange(items: CheckGroupItem<Component>[]) {
 function handleSelectAll() {
   const target = !checkedAll.value;
   groupComponents.value.forEach((group) => {
+    const isRadioGroup = group.label === 'IDE';
     group.items.forEach((item) => {
+      // 跳过 disabled 的项（required 且未安装的项）
       if (item.disabled) return;
+      // 单选模式下，跳过 IDE 组
+      if (isRadioGroup) return;
+      // required 的项不能取消选中
+      if (!target && item.value.required) return;
       item.checked = target;
     });
   });
@@ -141,8 +162,14 @@ onMounted(() => {
           </base-check-box>
         </div>
 
-        <check-box-group v-for="group of groupComponents" :key="group.label" :group="group" expand
-          @itemClick="handleComponentsClick" @change="handleComponentsChange" />
+        <check-box-group 
+          v-for="group of groupComponents" 
+          :key="group.label" 
+          :group="group" 
+          :radio="group.label === 'IDE'"
+          expand
+          @itemClick="handleComponentsClick" 
+          @change="handleComponentsChange" />
       </template>
 
       <template #right>

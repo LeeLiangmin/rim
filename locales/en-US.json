@@ -111,6 +111,8 @@
   "list_option": "List component/toolkit",
   "loading": "Loading",
   "loading_archive_info": "extracting %{kind} archive '%{path}'",
+  "extracting_file": "extracting file '%{file}'",
+  "extraction_complete": "extraction complete",
   "manage_components": "Manage Components",
   "manage_toolkit": "Manage Toolkit",
   "manager_update_channel": "Manager Update Channel",
