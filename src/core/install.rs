@@ -17,7 +17,7 @@ use crate::{default_cargo_registry, default_rustup_dist_server, default_rustup_u
 use anyhow::{anyhow, bail, Context, Result};
 use log::{error, info, warn};
 use rim_common::types::{
-    CargoRegistry, TomlParser, ToolInfo, ToolMap, ToolSource, ToolkitManifest,
+    CargoRegistry, TomlParser, ToolInfo, ToolKind, ToolMap, ToolSource, ToolkitManifest,
 };
 use rim_common::utils::ProgressHandler;
 use rim_common::{build_config, utils};
@@ -313,6 +313,67 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
                 .with_progress_handler(Box::new(self.progress_handler.clone()));
             let extracted_path = extractable.extract_then_skip_solo_dir(dest, Some("bin"))?;
             
+            // Check if extract_then_skip_solo_dir returned a file instead of a directory
+            // This can happen if the archive structure is unexpected or extraction returned the original file
+            if extracted_path.is_file() {
+                // If the returned path is the original file or a zip/tar file in dest, we need to extract it
+                let needs_extraction = extracted_path == maybe_file 
+                    || (extracted_path.parent() == Some(dest) && utils::Extractable::is_supported(&extracted_path));
+                
+                if needs_extraction {
+                    // Extract directly to dest
+                    let mut extractable = utils::Extractable::load(&extracted_path, None)?;
+                    extractable = extractable
+                        .quiet(GlobalOpts::get().quiet)
+                        .with_progress_handler(Box::new(self.progress_handler.clone()));
+                    extractable.extract_to(dest)?;
+                    
+                    // Now try to find the actual directory, excluding the zip file itself
+                    let entries: Vec<_> = std::fs::read_dir(dest)?
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.path())
+                        .filter(|p| {
+                            // Exclude the zip/tar file that was just extracted
+                            p != &extracted_path && (p.is_dir() || (p.is_file() && !utils::Extractable::is_supported(p)))
+                        })
+                        .collect();
+                    
+                    // Look for a directory that contains "bin" subdirectory or Cargo.toml (for crates)
+                    for entry in &entries {
+                        if entry.is_dir() {
+                            let bin_dir = entry.join("bin");
+                            let cargo_toml = entry.join("Cargo.toml");
+                            if (bin_dir.exists() && bin_dir.is_dir()) || cargo_toml.exists() {
+                                return Ok(entry.to_path_buf());
+                            }
+                        }
+                    }
+                    // If no bin directory found, but there's only one directory in dest, use that
+                    let dirs: Vec<_> = entries.iter().filter(|p| p.is_dir()).collect();
+                    if dirs.len() == 1 {
+                        return Ok(dirs[0].to_path_buf());
+                    }
+                    // If still no directory found, return dest itself
+                    return Ok(dest.to_path_buf());
+                }
+                // If it's not extractable or doesn't need extraction, and it's a file,
+                // check if it's an executable file (like cargo-nextest)
+                // Also, if it's a file that was extracted (not a compressed archive),
+                // it might be an executable that just doesn't have the exec bit set yet
+                // In this case, we should allow it and let the caller handle it
+                if utils::is_executable(&extracted_path) {
+                    return Ok(extracted_path);
+                }
+                // If it's a file that was extracted from an archive (not the original archive file),
+                // it's likely an executable file that needs exec permissions set
+                // Allow it to proceed - Tool::from_path will handle it
+                if extracted_path != maybe_file && !utils::Extractable::is_supported(&extracted_path) {
+                    return Ok(extracted_path);
+                }
+                // If it's not an executable and not an extracted file, we can't handle it here
+                // Fall through to the directory check below which will provide a better error message
+            }
+            
             // Ensure the extracted path is actually a directory
             if !extracted_path.is_dir() {
                 // If it's not a directory, try to find the parent directory that contains bin/
@@ -321,6 +382,31 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
                     if bin_in_parent.exists() && bin_in_parent.is_dir() {
                         info!("Found bin directory in parent, using parent directory: {}", parent.display());
                         return Ok(parent.to_path_buf());
+                    }
+                    // If the extracted path is a file but parent is a directory, check if parent contains the actual tool directory
+                    if parent.is_dir() {
+                        // List contents of parent directory to find the actual tool directory
+                        let entries: Vec<_> = std::fs::read_dir(parent)?
+                            .filter_map(|e| e.ok())
+                            .map(|e| e.path())
+                            .collect();
+                        // Look for a directory that contains "bin" subdirectory or Cargo.toml (for crates)
+                        for entry in &entries {
+                            if entry.is_dir() {
+                                let bin_dir = entry.join("bin");
+                                let cargo_toml = entry.join("Cargo.toml");
+                                if (bin_dir.exists() && bin_dir.is_dir()) || cargo_toml.exists() {
+                                    info!("Found tool directory in parent: {}", entry.display());
+                                    return Ok(entry.to_path_buf());
+                                }
+                            }
+                        }
+                        // If no bin directory found, but there's only one directory in parent, use that
+                        let dirs: Vec<_> = entries.iter().filter(|p| p.is_dir()).collect();
+                        if dirs.len() == 1 {
+                            info!("Using single directory found in parent: {}", dirs[0].display());
+                            return Ok(dirs[0].to_path_buf());
+                        }
                     }
                 }
                 anyhow::bail!(
@@ -714,15 +800,27 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
         } else if utils::Extractable::is_supported(path) {
             let extract_temp = self.create_temp_dir(name)?;
             let tool_installer_path = self.extract_or_copy_to_with_progress(path, extract_temp.path())?;
-            // Verify the extracted path is a directory
+            
+            // For Executables kind, the extracted path can be a file (single executable)
+            // Also, if kind is not specified but the extracted path is a single executable file,
+            // we should allow it (it will be auto-detected as Executables by Tool::from_path)
+            let tool_kind = info.kind();
             if !tool_installer_path.is_dir() {
-                anyhow::bail!(
-                    "Extracted path for '{}' is not a directory: {} (exists: {}, is_file: {})",
-                    name,
-                    tool_installer_path.display(),
-                    tool_installer_path.exists(),
-                    tool_installer_path.is_file()
-                );
+                let is_executable_file = tool_installer_path.is_file() && utils::is_executable(&tool_installer_path);
+                if matches!(tool_kind, Some(ToolKind::Executables)) || is_executable_file {
+                    // For executables, if it's a file, that's fine - it's a single executable
+                    // The Tool::new with Executables or Tool::from_path can handle files via PathExt
+                    // Continue with the file path
+                } else {
+                    // For other kinds (like Custom for vscode, Crate for ylong_*), it must be a directory
+                    anyhow::bail!(
+                        "Extracted path for '{}' is not a directory: {} (exists: {}, is_file: {})",
+                        name,
+                        tool_installer_path.display(),
+                        tool_installer_path.exists(),
+                        tool_installer_path.is_file()
+                    );
+                }
             }
             // we don't need the download temp dir anymore,
             // we should keep the extraction temp dir alive instead.

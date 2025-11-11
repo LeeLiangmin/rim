@@ -239,6 +239,10 @@ pub struct ToolInfoDetails {
     /// A flag to indicate whether this tool only offers GUI,
     /// thus should not be installed if the user doesn't have desktop environment.
     pub gui_only: bool,
+    #[serde(default, skip_serializing_if = "is_false", rename = "skip-vendor")]
+    /// If true, this tool will not be downloaded during `cargo dev vendor`.
+    /// The tool will remain with its URL in offline manifest and be downloaded during installation.
+    pub skip_vendor: bool,
     pub identifier: Option<String>,
     #[serde(flatten)]
     pub source: Option<ToolSource>,

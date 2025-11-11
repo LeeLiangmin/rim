@@ -145,6 +145,13 @@ fn gen_manifest_and_download_packages(args: &VendorArgs, toolkits: &mut Toolkits
             let tools_dir = toolkit_root.join(target).join(TOOLS_DIRNAME);
 
             for (_tool_name, info_table) in tool_info.iter_mut() {
+                // Skip tools that should not be vendored
+                if let ToolInfo::Complex(details) = info_table {
+                    if details.skip_vendor {
+                        continue;
+                    }
+                }
+                
                 // Check if this tool has a URL source that needs to be converted to path
                 let url_info = match info_table {
                     ToolInfo::Complex(details) => {
