@@ -226,7 +226,7 @@ pub struct Tools {
     ///
     /// Note that not all tools will have a group.
     #[serde(default)]
-    group: IndexMap<String, IndexSet<String>>,
+    pub group: IndexMap<String, IndexSet<String>>,
     #[serde(default)]
     pub target: IndexMap<String, ToolMap>,
 }

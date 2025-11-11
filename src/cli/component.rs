@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Result};
 use clap::{Subcommand, ValueHint};
+use log::warn;
 use rim_common::{
     types::{ToolInfo, ToolInfoDetails, ToolkitManifest},
     utils::CliProgress,
@@ -111,7 +112,17 @@ async fn install_components(
     .insecure(insecure)
     .with_rustup_dist_server(rustup_dist_server.clone());
     config.install_toolchain_components(&tc_components).await?;
-    config.install_tools(&tools).await?;
+    
+    // 为组件安装创建错误收集器
+    let mut errors = crate::core::install::InstallationErrors::new();
+    if let Err(e) = config.install_tools(&tools, &mut errors).await {
+        errors.add_step_error("安装工具".to_string(), e);
+    }
+    errors.report();
+    
+    if errors.has_errors() {
+        warn!("部分组件安装失败。请查看上面的错误信息。");
+    }
 
     info!("{}", t!("task_success"));
 

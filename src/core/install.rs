@@ -15,7 +15,7 @@ use crate::core::baked_in_manifest_raw;
 use crate::core::os::add_to_path;
 use crate::{default_cargo_registry, default_rustup_dist_server, default_rustup_update_root};
 use anyhow::{anyhow, bail, Context, Result};
-use log::info;
+use log::{error, info, warn};
 use rim_common::types::{
     CargoRegistry, TomlParser, ToolInfo, ToolMap, ToolSource, ToolkitManifest,
 };
@@ -25,6 +25,71 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use url::Url;
+
+/// 收集安装过程中的错误信息
+#[derive(Debug, Default)]
+pub(crate) struct InstallationErrors {
+    /// 工具安装错误: (工具名, 错误信息)
+    tool_errors: Vec<(String, String)>,
+    /// Rust工具链安装错误
+    rust_error: Option<String>,
+    /// 其他步骤的错误: (步骤名, 错误信息)
+    step_errors: Vec<(String, String)>,
+}
+
+impl InstallationErrors {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn add_tool_error(&mut self, tool_name: String, error: anyhow::Error) {
+        let error_msg = format!("{error:?}");
+        error!("安装工具 '{}' 失败: {}", tool_name, error_msg);
+        self.tool_errors.push((tool_name, error_msg));
+    }
+
+    pub(crate) fn add_rust_error(&mut self, error: anyhow::Error) {
+        let error_msg = format!("{error:?}");
+        error!("安装Rust工具链失败: {}", error_msg);
+        self.rust_error = Some(error_msg);
+    }
+
+    pub(crate) fn add_step_error(&mut self, step_name: String, error: anyhow::Error) {
+        let error_msg = format!("{error:?}");
+        warn!("步骤 '{}' 失败: {}", step_name, error_msg);
+        self.step_errors.push((step_name, error_msg));
+    }
+
+    pub(crate) fn has_errors(&self) -> bool {
+        !self.tool_errors.is_empty() || self.rust_error.is_some() || !self.step_errors.is_empty()
+    }
+
+    pub(crate) fn report(&self) {
+        if !self.has_errors() {
+            return;
+        }
+
+        error!("安装过程中发生了一些错误:");
+        
+        if !self.tool_errors.is_empty() {
+            error!("工具安装错误 ({} 个):", self.tool_errors.len());
+            for (name, err) in &self.tool_errors {
+                error!("  - {}: {}", name, err);
+            }
+        }
+
+        if let Some(ref err) = self.rust_error {
+            error!("Rust工具链安装错误: {}", err);
+        }
+
+        if !self.step_errors.is_empty() {
+            error!("其他步骤错误 ({} 个):", self.step_errors.len());
+            for (step, err) in &self.step_errors {
+                error!("  - {}: {}", step, err);
+            }
+        }
+    }
+}
 
 const DEFAULT_FOLDER_NAME: &str = "rust";
 
@@ -348,40 +413,58 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
     }
 
     pub async fn install(mut self, components: Vec<Component>) -> Result<()> {
-        let result = async {
-            let (tc_components, tools) = split_components(components);
-            reject_conflicting_tools(&tools)?;
+        let mut errors = InstallationErrors::new();
+        
+        let (tc_components, tools) = split_components(components);
+        reject_conflicting_tools(&tools)?;
 
-            self.progress_handler
-                .start_master(t!("installing").into(), utils::ProgressKind::Len(100))?;
+        self.progress_handler
+            .start_master(t!("installing").into(), utils::ProgressKind::Len(100))?;
 
-            self.setup()?;
-            self.config_env_vars()?;
-            self.config_cargo()?;
-            // This step taking cares of requirements, such as `MSVC`, also third-party app such as `VS Code`.
-            self.install_tools(&tools).await?;
-            self.install_rust(&tc_components).await?;
-            self.install_tools_late(&tools).await?;
-
-            self.progress_handler
-                .finish_master(t!("install_finished").into())?;
-            Ok(())
+        // setup 是关键步骤，如果失败应该停止
+        self.setup()?;
+        
+        // 其他步骤失败时记录错误但继续
+        if let Err(e) = self.config_env_vars() {
+            errors.add_step_error("配置环境变量".to_string(), e);
         }
-        .await;
-
-        if let Err(e) = &result {
-            error!("{e:?}");
-            // TODO: revert changes
+        
+        if let Err(e) = self.config_cargo() {
+            errors.add_step_error("配置Cargo".to_string(), e);
+        }
+        
+        // This step taking cares of requirements, such as `MSVC`, also third-party app such as `VS Code`.
+        if let Err(e) = self.install_tools(&tools, &mut errors).await {
+            errors.add_step_error("安装工具（早期）".to_string(), e);
+        }
+        
+        if let Err(e) = self.install_rust(&tc_components, &mut errors).await {
+            errors.add_step_error("安装Rust工具链".to_string(), e);
+        }
+        
+        if let Err(e) = self.install_tools_late(&tools, &mut errors).await {
+            errors.add_step_error("安装工具（后期）".to_string(), e);
         }
 
-        result
+        // 报告所有错误
+        errors.report();
+
+        // 如果有错误，在日志中记录，但不阻止安装流程完成
+        if errors.has_errors() {
+            warn!("安装完成，但部分组件安装失败。请查看上面的错误信息。");
+        }
+
+        self.progress_handler
+            .finish_master(t!("install_finished").into())?;
+        
+        Ok(())
     }
 
     pub(crate) fn inc_progress(&self, val: u64) -> Result<()> {
         self.progress_handler.update_master(Some(val))
     }
 
-    async fn install_tools_(&mut self, use_rust: bool, tools: &ToolMap, weight: u64) -> Result<()> {
+    async fn install_tools_(&mut self, use_rust: bool, tools: &ToolMap, weight: u64, errors: &mut InstallationErrors) -> Result<()> {
         let mut to_install = tools
             .iter()
             .filter(|(_, t)| {
@@ -408,51 +491,78 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
 
         for (name, tool) in to_install {
             info!("{}", t!("installing_tool_info", name = name));
-            self.install_tool(name, tool).await?;
-            self.inc_progress(sub_progress_delta)?;
+            match self.install_tool(name, tool).await {
+                Ok(()) => {
+                    self.inc_progress(sub_progress_delta)?;
+                }
+                Err(e) => {
+                    errors.add_tool_error(name.to_string(), e);
+                    // 即使安装失败，也更新进度，避免进度条卡住
+                    self.inc_progress(sub_progress_delta)?;
+                }
+            }
         }
 
-        self.install_record.write()?;
+        // 即使有错误，也尝试保存安装记录（已成功安装的工具）
+        if let Err(e) = self.install_record.write() {
+            errors.add_step_error("保存安装记录".to_string(), e);
+        }
 
         Ok(())
     }
 
-    pub async fn install_tools(&mut self, tools: &ToolMap) -> Result<()> {
+    pub(crate) async fn install_tools(&mut self, tools: &ToolMap, errors: &mut InstallationErrors) -> Result<()> {
         info!("{}", t!("install_tools"));
-        self.install_tools_(false, tools, 30).await
+        self.install_tools_(false, tools, 30, errors).await
     }
 
     /// A step to include `cargo install`, and any tools that requires rust to be installed
-    pub async fn install_tools_late(&mut self, tools: &ToolMap) -> Result<()> {
+    pub(crate) async fn install_tools_late(&mut self, tools: &ToolMap, errors: &mut InstallationErrors) -> Result<()> {
         info!("{}", t!("install_via_cargo"));
-        self.install_tools_(true, tools, 30).await
+        self.install_tools_(true, tools, 30, errors).await
     }
 
     /// Install Rust toolchain with a list of components
-    pub async fn install_rust(&mut self, components: &[ToolchainComponent]) -> Result<()> {
+    pub(crate) async fn install_rust(&mut self, components: &[ToolchainComponent], errors: &mut InstallationErrors) -> Result<()> {
         info!("{}", t!("install_toolchain"));
 
         let manifest = self.manifest;
 
-        ToolchainInstaller::init(&*self)
+        match ToolchainInstaller::init(&*self)
             .insecure(self.insecure)
             .rustup_dist_server(Some(self.rustup_dist_server().clone()))
             .install(self, components)
-            .await?;
-        add_to_path(&*self, self.cargo_bin())?;
-        self.toolchain_is_installed = true;
+            .await
+        {
+            Ok(()) => {
+                // 安装成功，继续后续步骤
+                if let Err(e) = add_to_path(&*self, self.cargo_bin()) {
+                    errors.add_step_error("添加到PATH".to_string(), e);
+                } else {
+                    self.toolchain_is_installed = true;
+                }
 
-        // Add the rust info to the fingerprint.
-        self.install_record
-            .add_rust_record(&manifest.toolchain.channel, components);
-        // record meta info
-        // TODO(?): Maybe this should be moved as a separate step?
-        self.install_record
-            .clone_toolkit_meta_from_manifest(manifest);
-        // write changes
-        self.install_record.write()?;
+                // Add the rust info to the fingerprint.
+                self.install_record
+                    .add_rust_record(&manifest.toolchain.channel, components);
+                // record meta info
+                // TODO(?): Maybe this should be moved as a separate step?
+                self.install_record
+                    .clone_toolkit_meta_from_manifest(manifest);
+                // write changes
+                if let Err(e) = self.install_record.write() {
+                    errors.add_step_error("保存安装记录".to_string(), e);
+                }
 
-        self.inc_progress(30)?;
+                self.inc_progress(30)?;
+            }
+            Err(e) => {
+                errors.add_rust_error(e);
+                // 即使安装失败，也更新进度
+                self.inc_progress(30)?;
+            }
+        }
+
         Ok(())
     }
 
@@ -663,6 +773,8 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
 // For updates
 impl<T: ProgressHandler + Clone + 'static> InstallConfiguration<'_, T> {
     pub async fn update(mut self, components: Vec<Component>) -> Result<()> {
+        let mut errors = InstallationErrors::new();
+        
         self.progress_handler
             .start_master(t!("installing").into(), utils::ProgressKind::Len(100))?;
 
@@ -678,9 +790,22 @@ impl<T: ProgressHandler + Clone + 'static> InstallConfiguration<'_, T> {
 
         // don't update toolchain if no toolchain components are selected
         if !toolchain.is_empty() {
-            self.update_toolchain(&toolchain).await?;
+            if let Err(e) = self.update_toolchain(&toolchain).await {
+                errors.add_step_error("更新工具链".to_string(), e);
+            }
         }
-        self.update_tools(&tools).await?;
+        
+        if let Err(e) = self.update_tools(&tools, &mut errors).await {
+            errors.add_step_error("更新工具".to_string(), e);
+        }
+
+        // 报告所有错误
+        errors.report();
+
+        // 如果有错误，在日志中记录，但不阻止更新流程完成
+        if errors.has_errors() {
+            warn!("更新完成，但部分组件更新失败。请查看上面的错误信息。");
+        }
 
         self.progress_handler
             .finish_master(t!("install_finished").into())?;
@@ -707,10 +832,10 @@ impl<T: ProgressHandler + Clone + 'static> InstallConfiguration<'_, T> {
         Ok(())
     }
 
-    async fn update_tools(&mut self, tools: &ToolMap) -> Result<()> {
+    async fn update_tools(&mut self, tools: &ToolMap, errors: &mut InstallationErrors) -> Result<()> {
         info!("{}", t!("update_tools"));
-        self.install_tools_(false, tools, 15).await?;
-        self.install_tools_(true, tools, 15).await?;
+        self.install_tools_(false, tools, 15, errors).await?;
+        self.install_tools_(true, tools, 15, errors).await?;
         Ok(())
     }
 

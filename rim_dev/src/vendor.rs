@@ -140,19 +140,29 @@ fn gen_manifest_and_download_packages(args: &VendorArgs, toolkits: &mut Toolkits
         // (assuming that path is valid, we will use it to download packages).
         let offline_manifest_path = offline_manifests_dir.join(format!("{name}.toml"));
         let targeted_tools = &mut toolkit.manifest.tools.target;
+        
         for (target, tool_info) in targeted_tools {
             let tools_dir = toolkit_root.join(target).join(TOOLS_DIRNAME);
 
-            for (_name, info_table) in tool_info.iter_mut() {
-                let ToolInfo::Complex(details) = info_table else {
-                    continue;
+            for (_tool_name, info_table) in tool_info.iter_mut() {
+                // Check if this tool has a URL source that needs to be converted to path
+                let url_info = match info_table {
+                    ToolInfo::Complex(details) => {
+                        if let Some(ToolSource::Url {
+                            version: _,
+                            url,
+                            filename,
+                        }) = &details.source
+                        {
+                            Some((url.clone(), filename.clone()))
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
                 };
-                if let Some(ToolSource::Url {
-                    version: _,
-                    url,
-                    filename,
-                }) = &details.source
-                {
+                
+                if let Some((url, filename)) = url_info {
                     let filename = if let Some(name) = filename {
                         name
                     } else {
@@ -160,20 +170,28 @@ fn gen_manifest_and_download_packages(args: &VendorArgs, toolkits: &mut Toolkits
                             .rsplit_once("/")
                             .ok_or_else(|| anyhow!("missing filename for URL: {url}"))?
                             .1
+                            .to_string()
                     };
                     let rel_path = format!("{TOOLS_DIRNAME}/{filename}");
 
-                    if args.should_download(name, target) {
+                    let download_success = if args.should_download(name, target) {
                         let dest = tools_dir.join(filename);
                         ensure_parent_dir(&dest)?;
-                        download(url.as_str(), &dest)?;
-                    }
+                        download(url.as_str(), &dest).is_ok()
+                    } else {
+                        false
+                    };
 
-                    // convert url package source to path.
-                    info_table.url_to_path(rel_path);
+                    // Only convert url to path if download was successful
+                    // This way, tools like CodeArts and VSCode that may fail to download
+                    // will remain with url in offline manifest, and will be downloaded during installation
+                    if download_success {
+                        info_table.url_to_path(rel_path);
+                    }
                 }
             }
         }
+        
         // Then, insert `[rust.offline-dist-server]` value and `[rust.rustup]` section
         let rust_section = &mut toolkit.manifest.toolchain;
         rust_section.offline_dist_server = Some(TOOLCHAIN_DIRNAME.into());
@@ -282,3 +300,4 @@ fn download_toolchain_components(
 
     Ok(())
 }
+
