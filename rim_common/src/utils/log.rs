@@ -103,11 +103,8 @@ impl Logger {
         if let Some(sender) = self.output_sender {
             let custom = fern::Dispatch::new()
                 .filter(filter_log_for_output)
-                .format(|out, msg, rec| {
-                    out.finish(format_args!(
-                        "{}: {msg}",
-                        rec.level().to_string().to_lowercase()
-                    ));
+                .format(|out, msg, _rec| {
+                    out.finish(format_args!("{msg}"));
                 })
                 .chain(sender);
             dispatch = dispatch.chain(custom);
