@@ -320,16 +320,59 @@ impl ExtractHelperBoxed<'_> {
         Ok(())
     }
 
-    fn extract_tar<R: Read>(&mut self, archive: &mut tar::Archive<R>) -> Result<()> {
+    fn extract_tar<R: Read>(&mut self, _archive: &mut tar::Archive<R>) -> Result<()> {
+        // First, count the entries to show progress bar instead of spinner
+        // We need to recreate the archive after counting since we consumed it
+        let file = File::open(self.file_path)?;
+        let ext = self.file_path.extension().and_then(|s| s.to_str());
+        
+        // Count entries by creating a temporary archive
+        let mut entry_count = 0u64;
+        {
+            let temp_file = File::open(self.file_path)?;
+            let temp_archive: Box<dyn Read> = if ext == Some("xz") {
+                Box::new(XzDecoder::new(temp_file))
+            } else {
+                Box::new(GzDecoder::new(temp_file))
+            };
+            let mut temp_tar = tar::Archive::new(temp_archive);
+            let mut entries = temp_tar.entries()?;
+            while entries.next().transpose()?.is_some() {
+                entry_count += 1;
+            }
+        }
+
+        // Recreate the archive for actual extraction
+        let new_archive: Box<dyn Read> = if ext == Some("xz") {
+            Box::new(XzDecoder::new(file))
+        } else {
+            Box::new(GzDecoder::new(file))
+        };
+        let mut tar_archive = tar::Archive::new(new_archive);
+        
         #[cfg(unix)]
-        archive.set_preserve_permissions(true);
+        tar_archive.set_preserve_permissions(true);
 
-        // Init progress bar, use spinner because the length of entries cannot be retrieved.
-        self.start_progress_bar(ProgressKind::Spinner {
-            auto_tick_duration: Some(std::time::Duration::from_millis(100)),
-        })?;
+        // Init progress bar with entry count
+        if entry_count > 0 {
+            self.start_progress_bar(ProgressKind::Len(entry_count))?;
+        } else {
+            // Fallback to spinner if we couldn't count entries
+            self.start_progress_bar(ProgressKind::Spinner {
+                auto_tick_duration: Some(std::time::Duration::from_millis(100)),
+            })?;
+        }
 
-        archive.unpack(self.output_dir)?;
+        // Extract entries and update progress
+        let mut entries = tar_archive.entries()?;
+        let mut processed = 0u64;
+        while let Some(mut entry) = entries.next().transpose()? {
+            entry.unpack_in(self.output_dir)?;
+            processed += 1;
+            if entry_count > 0 {
+                self.update_progress_bar(Some(processed))?;
+            }
+        }
 
         // Stop progress bar's progress
         self.end_progress_bar()?;
