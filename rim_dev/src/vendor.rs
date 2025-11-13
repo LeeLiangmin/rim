@@ -138,62 +138,76 @@ fn gen_manifest_and_download_packages(args: &VendorArgs, toolkits: &mut Toolkits
         // then, we will be changing the tools that have an `url` specified,
         // and change it to a relative `path`
         // (assuming that path is valid, we will use it to download packages).
+        // Note: This conversion only happens for offline manifest generation.
+        // DownloadOnly mode skips this entire section as it doesn't modify manifests.
         let offline_manifest_path = offline_manifests_dir.join(format!("{name}.toml"));
-        let targeted_tools = &mut toolkit.manifest.tools.target;
         
-        for (target, tool_info) in targeted_tools {
-            let tools_dir = toolkit_root.join(target).join(TOOLS_DIRNAME);
+        // Only process URL-to-path conversion for modes that generate offline manifest
+        if !matches!(args.mode, VendorMode::DownloadOnly) {
+            let targeted_tools = &mut toolkit.manifest.tools.target;
+            
+            for (target, tool_info) in targeted_tools {
+                let tools_dir = toolkit_root.join(target).join(TOOLS_DIRNAME);
 
-            for (_tool_name, info_table) in tool_info.iter_mut() {
-                // Skip tools that should not be vendored
-                if let ToolInfo::Complex(details) = info_table {
-                    if details.skip_vendor {
-                        continue;
-                    }
-                }
-                
-                // Check if this tool has a URL source that needs to be converted to path
-                let url_info = match info_table {
-                    ToolInfo::Complex(details) => {
-                        if let Some(ToolSource::Url {
-                            version: _,
-                            url,
-                            filename,
-                        }) = &details.source
-                        {
-                            Some((url.clone(), filename.clone()))
-                        } else {
-                            None
+                for (_tool_name, info_table) in tool_info.iter_mut() {
+                    // Skip tools that should not be vendored (skip_vendor = true)
+                    if let ToolInfo::Complex(details) = info_table {
+                        if details.skip_vendor {
+                            continue;
                         }
                     }
-                    _ => None,
-                };
-                
-                if let Some((url, filename)) = url_info {
-                    let filename = if let Some(name) = filename {
-                        name
-                    } else {
-                        url.as_str()
-                            .rsplit_once("/")
-                            .ok_or_else(|| anyhow!("missing filename for URL: {url}"))?
-                            .1
-                            .to_string()
+                    
+                    // Check if this tool has a URL source that needs to be converted to path
+                    let url_info = match info_table {
+                        ToolInfo::Complex(details) => {
+                            if let Some(ToolSource::Url {
+                                version: _,
+                                url,
+                                filename,
+                            }) = &details.source
+                            {
+                                Some((url.clone(), filename.clone()))
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
                     };
-                    let rel_path = format!("{TOOLS_DIRNAME}/{filename}");
+                    
+                    if let Some((url, filename)) = url_info {
+                        let filename = if let Some(name) = filename {
+                            name
+                        } else {
+                            url.as_str()
+                                .rsplit_once("/")
+                                .ok_or_else(|| anyhow!("missing filename for URL: {url}"))?
+                                .1
+                                .to_string()
+                        };
+                        let rel_path = format!("{TOOLS_DIRNAME}/{filename}");
 
-                    let download_success = if args.should_download(name, target) {
-                        let dest = tools_dir.join(filename);
-                        ensure_parent_dir(&dest)?;
-                        download(url.as_str(), &dest).is_ok()
-                    } else {
-                        false
-                    };
-
-                    // Only convert url to path if download was successful
-                    // This way, tools like CodeArts and VSCode that may fail to download
-                    // will remain with url in offline manifest, and will be downloaded during installation
-                    if download_success {
-                        info_table.url_to_path(rel_path);
+                        match args.mode {
+                            VendorMode::SplitOnly => {
+                                // SplitOnly mode: always convert URL to path without downloading
+                                // This is for offline manifest generation only
+                                info_table.url_to_path(rel_path);
+                            }
+                            VendorMode::Regular => {
+                                // Regular mode: download and convert only if successful
+                                // This is for offline manifest generation only
+                                if args.should_download(name, target) {
+                                    let dest = tools_dir.join(&filename);
+                                    ensure_parent_dir(&dest)?;
+                                    if download(url.as_str(), &dest).is_ok() {
+                                        info_table.url_to_path(rel_path);
+                                    }
+                                }
+                            }
+                            VendorMode::DownloadOnly => {
+                                // This branch should never be reached due to the outer check
+                                unreachable!("DownloadOnly mode should not enter URL-to-path conversion")
+                            }
+                        }
                     }
                 }
             }

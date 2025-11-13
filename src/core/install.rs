@@ -564,6 +564,18 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
             })
             .collect::<Vec<_>>();
 
+        // 如果需要 Rust 工具链但工具链未安装，跳过这些工具并记录错误
+        if use_rust && !self.toolchain_is_installed && !to_install.is_empty() {
+            warn!("Rust 工具链未安装，跳过需要 Rust 的工具安装");
+            for (name, _) in &to_install {
+                errors.add_tool_error(
+                    name.to_string(),
+                    anyhow::anyhow!(t!("no_toolchain_installed"))
+                );
+            }
+            return self.inc_progress(weight);
+        }
+
         if to_install.is_empty() {
             return self.inc_progress(weight);
         }
