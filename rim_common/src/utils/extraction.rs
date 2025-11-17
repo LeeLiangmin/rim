@@ -31,17 +31,39 @@ pub struct Extractable<'a> {
 
 impl<'a> Extractable<'a> {
     pub fn is_supported(path: &'a Path) -> bool {
-        let Ok(extensions) = file_extension(path) else {
-            return false;
-        };
-        matches!(extensions, "7z" | "zip" | "gz" | "xz" | "crate")
+        // First try extension-based detection
+        if let Ok(ext) = file_extension(path) {
+            if matches!(ext, "7z" | "zip" | "gz" | "xz" | "crate") {
+                return true;
+            }
+        }
+        // Fallback to content-based detection
+        detect_format_from_content(path).is_some()
+    }
+
+    /// Detect file format from content (magic bytes) instead of extension
+    pub fn detect_format_from_content(path: &Path) -> Option<&'static str> {
+        detect_format_from_content(path)
     }
 
     pub fn load(path: &'a Path, custom_kind: Option<&str>) -> Result<Self> {
         let ext = if let Some(custom) = custom_kind {
             custom
         } else {
-            file_extension(path)?
+            // Try extension first
+            match file_extension(path) {
+                Ok(ext) if matches!(ext, "7z" | "zip" | "gz" | "xz" | "crate") => ext,
+                _ => {
+                    // Fallback to content-based detection
+                    detect_format_from_content(path)
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "unable to determine file format for '{}': neither extension nor content match supported formats",
+                                path.display()
+                            )
+                        })?
+                }
+            }
         };
 
         let kind = match ext {
@@ -98,6 +120,16 @@ impl<'a> Extractable<'a> {
     ///
     /// This will extract file under the `root`, make sure it's an empty folder before using this function.
     pub fn extract_to(&mut self, root: &Path) -> Result<()> {
+        // Ensure root is a directory, not a file
+        if root.is_file() {
+            bail!(
+                "extraction target '{}' is a file, not a directory",
+                root.display()
+            );
+        }
+        // Ensure the directory exists
+        ensure_dir(root)?;
+        
         let handler: Box<dyn ProgressHandler> = if let Some(ref mut ph) = self.progress_handler {
             // Take the handler if available
             std::mem::replace(ph, Box::new(CliProgress::default()))
@@ -151,13 +183,23 @@ impl<'a> Extractable<'a> {
         stop: Option<S>,
     ) -> Result<PathBuf> {
         fn inner_<S: AsRef<OsStr>>(root: &Path, stop: Option<S>) -> Result<PathBuf> {
-            let sub_entries = if root.is_dir() {
-                walk_dir(root, false)?
-            } else {
-                return Ok(root.to_path_buf());
-            };
+            // If root is not a directory, this is an error - extraction should have created a directory
+            if !root.is_dir() {
+                bail!(
+                    "extraction target '{}' is not a directory after extraction (exists: {}, is_file: {})",
+                    root.display(),
+                    root.exists(),
+                    root.is_file()
+                );
+            }
+            
+            let sub_entries = walk_dir(root, false)?;
+            // Filter out files, only keep directories
+            let sub_dirs: Vec<_> = sub_entries.iter()
+                .filter(|p| p.is_dir())
+                .collect();
 
-            if let [sub_dir] = sub_entries.as_slice() {
+            if let [sub_dir] = sub_dirs.as_slice() {
                 if matches!(stop, Some(ref keyword) if filename_matches_keyword(sub_dir, keyword)) {
                     Ok(root.to_path_buf())
                 } else {
@@ -169,6 +211,7 @@ impl<'a> Extractable<'a> {
         }
 
         // first we need to extract the tarball
+        // extract_to will ensure root is a directory
         self.extract_to(root)?;
         // then find the last solo dir recursively
         inner_(root, stop)
@@ -199,6 +242,44 @@ fn filename_matches_keyword<S: AsRef<OsStr>>(path: &Path, keyword: S) -> bool {
     } else {
         false
     }
+}
+
+/// Detect file format from content (magic bytes)
+/// Returns the format extension if detected, None otherwise
+fn detect_format_from_content(path: &Path) -> Option<&'static str> {
+    let mut file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return None,
+    };
+
+    let mut header = [0u8; 16];
+    match file.read_exact(&mut header) {
+        Ok(_) => {}
+        Err(_) => return None,
+    }
+
+    // Check magic bytes for different formats
+    // ZIP: starts with PK (0x50 0x4B) - either "PK\x03\x04" (local file header) or "PK\x05\x06" (empty archive) or "PK\x07\x08" (spanned archive)
+    if header.starts_with(b"PK\x03\x04") || header.starts_with(b"PK\x05\x06") || header.starts_with(b"PK\x07\x08") {
+        return Some("zip");
+    }
+
+    // 7z: starts with "7z\xBC\xAF\x27\x1C"
+    if header.starts_with(b"7z\xBC\xAF\x27\x1C") {
+        return Some("7z");
+    }
+
+    // GZIP: starts with 0x1F 0x8B
+    if header.starts_with(&[0x1F, 0x8B]) {
+        return Some("gz");
+    }
+
+    // XZ: starts with 0xFD 0x37 0x7A 0x58 0x5A 0x00
+    if header.starts_with(&[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]) {
+        return Some("xz");
+    }
+
+    None
 }
 
 struct ExtractHelperBoxed<'a> {

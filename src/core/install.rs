@@ -316,9 +316,44 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
             // Check if extract_then_skip_solo_dir returned a file instead of a directory
             // This can happen if the archive structure is unexpected or extraction returned the original file
             if extracted_path.is_file() {
-                // If the returned path is the original file or a zip/tar file in dest, we need to extract it
-                let needs_extraction = extracted_path == maybe_file 
-                    || (extracted_path.parent() == Some(dest) && utils::Extractable::is_supported(&extracted_path));
+                // Check if extracted_path is a zip/tar file that needs extraction
+                // Don't rely on direct path comparison as paths may differ in format (absolute vs relative, etc.)
+                let mut needs_extraction = false;
+                
+                // If extracted_path is in dest directory, check if it's a supported archive format
+                if extracted_path.parent() == Some(dest) {
+                    // First try extension-based detection
+                    if utils::Extractable::is_supported(&extracted_path) {
+                        needs_extraction = true;
+                    } else {
+                        // Try content-based detection
+                        if let Some(detected_format) = utils::Extractable::detect_format_from_content(&extracted_path) {
+                            info!("Detected archive format '{}' for file '{}', attempting extraction", 
+                                detected_format, extracted_path.display());
+                            needs_extraction = true;
+                        } else {
+                            // Last resort: try to load it as an archive
+                            if utils::Extractable::load(&extracted_path, None).is_ok() {
+                                info!("Found archive file '{}' in dest directory, attempting extraction", 
+                                    extracted_path.display());
+                                needs_extraction = true;
+                            }
+                        }
+                    }
+                }
+                
+                // Also check if it's the original file (using canonicalize for reliable comparison)
+                // This handles cases where the file was copied/moved but path format changed
+                if !needs_extraction {
+                    if let (Ok(extracted_canon), Ok(maybe_canon)) = (
+                        extracted_path.canonicalize(),
+                        maybe_file.canonicalize()
+                    ) {
+                        if extracted_canon == maybe_canon {
+                            needs_extraction = true;
+                        }
+                    }
+                }
                 
                 if needs_extraction {
                     // Extract directly to dest
@@ -419,6 +454,73 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
             
             Ok(extracted_path)
         } else {
+            // File is not a supported archive format
+            // Check if it's an executable file (like cargo-nextest on Linux)
+            if maybe_file.is_file() {
+                // Try to detect format from content first
+                if let Some(detected_format) = utils::Extractable::detect_format_from_content(maybe_file) {
+                    // File is actually a compressed archive, but extension was wrong
+                    // Try to load it with the detected format
+                    if let Ok(mut extractable) = utils::Extractable::load(maybe_file, Some(detected_format)) {
+                        extractable = extractable
+                            .quiet(GlobalOpts::get().quiet)
+                            .with_progress_handler(Box::new(self.progress_handler.clone()));
+                        let extracted_path = extractable.extract_then_skip_solo_dir(dest, Some("bin"))?;
+                        
+                        // Handle the extracted path (same logic as above)
+                        if extracted_path.is_file() {
+                            // Check if it's an executable file
+                            if utils::is_executable(&extracted_path) {
+                                return Ok(extracted_path);
+                            }
+                            // If it's not an executable, check if parent contains the tool directory
+                            if let Some(parent) = extracted_path.parent() {
+                                if parent.is_dir() {
+                                    let entries: Vec<_> = std::fs::read_dir(parent)?
+                                        .filter_map(|e| e.ok())
+                                        .map(|e| e.path())
+                                        .collect();
+                                    for entry in &entries {
+                                        if entry.is_dir() {
+                                            let bin_dir = entry.join("bin");
+                                            let cargo_toml = entry.join("Cargo.toml");
+                                            if (bin_dir.exists() && bin_dir.is_dir()) || cargo_toml.exists() {
+                                                return Ok(entry.to_path_buf());
+                                            }
+                                        }
+                                    }
+                                    let dirs: Vec<_> = entries.iter().filter(|p| p.is_dir()).collect();
+                                    if dirs.len() == 1 {
+                                        return Ok(dirs[0].to_path_buf());
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if extracted_path.is_dir() {
+                            return Ok(extracted_path);
+                        }
+                    }
+                }
+                
+                // If it's not a compressed archive, check if it's an executable file
+                // For executables, we should copy it to dest and return the copied file path
+                if utils::is_executable(maybe_file) || maybe_file.extension().is_none() {
+                    // It might be an executable file, copy it to dest directory
+                    let dest_file = dest.join(maybe_file.file_name().unwrap_or_else(|| std::ffi::OsStr::new("executable")));
+                    std::fs::copy(maybe_file, &dest_file)?;
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let mut perms = std::fs::metadata(&dest_file)?.permissions();
+                        perms.set_mode(0o755);
+                        std::fs::set_permissions(&dest_file, perms)?;
+                    }
+                    return Ok(dest_file);
+                }
+            }
+            
+            // For other files, try to copy into dest
             utils::copy_into(maybe_file, dest)
         }
     }
@@ -796,7 +898,47 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
             .download(url, &dest)
             .await?;
 
-        self.try_install_from_path(name, &dest, info, Some(temp_dir))
+        // After download, check if the file format can be detected from content
+        // If the extension doesn't match the actual format, try to detect and rename
+        let final_dest = if dest.is_file() && !utils::Extractable::is_supported(&dest) {
+            // File exists but extension-based detection failed, try content-based detection
+            if let Some(detected_format) = utils::Extractable::detect_format_from_content(&dest) {
+                // Get the base name without extension
+                let base_name = dest.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_else(|| dest.file_name().and_then(|n| n.to_str()).unwrap_or("download"));
+                
+                // Construct new filename with detected format
+                let new_name = if detected_format == "gz" {
+                    // For .gz, check if it's actually .tar.gz by looking at the filename
+                    if base_name.ends_with(".tar") {
+                        format!("{}.tar.gz", base_name.strip_suffix(".tar").unwrap_or(base_name))
+                    } else {
+                        format!("{}.tar.gz", base_name)
+                    }
+                } else {
+                    format!("{}.{}", base_name, detected_format)
+                };
+                
+                let new_dest = dest.parent().unwrap().join(&new_name);
+                
+                // Only rename if the new name is different
+                if new_dest != dest {
+                    std::fs::rename(&dest, &new_dest)?;
+                    info!("Detected file format as '{}', renamed '{}' to '{}'", 
+                        detected_format, dest.display(), new_dest.display());
+                    new_dest
+                } else {
+                    dest
+                }
+            } else {
+                dest
+            }
+        } else {
+            dest
+        };
+
+        self.try_install_from_path(name, &final_dest, info, Some(temp_dir))
     }
 
     fn try_install_from_path(
