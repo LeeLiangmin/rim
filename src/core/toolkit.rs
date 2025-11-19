@@ -1,7 +1,7 @@
 use crate::components;
 use crate::core::parser::dist_manifest::DistManifest;
 use crate::fingerprint::InstallationRecord;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rim_common::types::ToolkitManifest;
 use rim_common::utils::HiddenProgress;
 use rim_common::{types::TomlParser, utils};
@@ -136,8 +136,26 @@ pub async fn toolkits_from_server(insecure: bool) -> Result<Vec<Toolkit>> {
         .await?;
     debug!("distribution manifest file successfully downloaded!");
 
+    // Check if the downloaded file is empty or contains only whitespace
+    let file_content = std::fs::read_to_string(dist_m_file.path())?;
+    if file_content.trim().is_empty() {
+        anyhow::bail!(
+            "downloaded distribution manifest file is empty from '{}'",
+            dist_m_url
+        );
+    }
+
     // load dist "pacakges" then convert them into `toolkit`s
-    let packages = DistManifest::load(dist_m_file.path())?.packages;
+    let manifest = DistManifest::load(dist_m_file.path())
+        .with_context(|| format!("failed to parse distribution manifest from '{}'", dist_m_url))?;
+    let packages = manifest.packages;
+    
+    if packages.is_empty() {
+        anyhow::bail!(
+            "distribution manifest from '{}' contains no packages",
+            dist_m_url
+        );
+    }
     let mut toolkits: Vec<Toolkit> = packages.into_iter().map(Toolkit::from).collect();
     toolkits.sort_by(|a, b| trim_version(&b.version).cmp(trim_version(&a.version)));
     debug!(
