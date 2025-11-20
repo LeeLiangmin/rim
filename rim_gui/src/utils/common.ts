@@ -22,10 +22,14 @@ export const defaultBaseConfig: BaseConfig = {
 };
 
 // 使用 message invoke 显示错误信息
-export async function invokeCommand(command: string, args = {}) {
+export async function invokeCommand(command: string, args = {}, options?: { silent?: boolean }) {
   try {
     return await invoke(command, args);
   } catch (error: any) {
+    // 如果设置了 silent 模式，不显示错误对话框，直接抛出错误
+    if (options?.silent) {
+      throw error;
+    }
     // 捕获错误并显示对话框
     await message(error || '发生了一个错误', {
       title: '错误',

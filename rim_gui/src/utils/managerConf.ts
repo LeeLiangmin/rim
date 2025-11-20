@@ -157,34 +157,63 @@ class ManagerConf {
     );
   }
 
-  async load() {
-    await this.reloadKits();
+  async load(): Promise<{ kitsLoaded: boolean; kitsError?: string }> {
+    const result = await this.reloadKits();
     // since this function is called immediately after app start, we call these functions
     // to check updates in background then ask user if they what to install it.
-    await invokeCommand('check_updates_on_startup');
+    // Use silent mode to avoid showing error dialog if update check fails
+    try {
+      await invokeCommand('check_updates_on_startup', {}, { silent: true });
+    } catch (error) {
+      // Silently ignore update check failures, they're not critical
+      console.warn('Update check failed:', error);
+    }
+    return result;
   }
 
-  async loadInstalledKit() {
-    const installed = await invokeCommand(
-      'get_installed_kit', { reload: true }
-    ) as KitItem | undefined;
-    if (installed) {
-      this.setInstalled(installed);
-      await this.setCurrent(installed);
+  async loadInstalledKit(): Promise<{ success: boolean; error?: string }> {
+    try {
+      const installed = await invokeCommand(
+        'get_installed_kit', { reload: true }, { silent: true }
+      ) as KitItem | undefined;
+      if (installed) {
+        this.setInstalled(installed);
+        await this.setCurrent(installed);
+      }
+      return { success: true };
+    } catch (error: any) {
+      const errorMessage = error?.toString() || 'Failed to load installed toolkit';
+      console.error('Failed to load installed kit:', errorMessage);
+      // Don't clear existing installed kit on error, keep it if available
+      return { success: false, error: errorMessage };
     }
   }
 
-  async loadAvailableKits() {
-    const availableKits = (await invokeCommand(
-      'get_available_kits', { reload: true }
-    )) as KitItem[];
+  async loadAvailableKits(): Promise<{ success: boolean; error?: string }> {
+    try {
+      const availableKits = (await invokeCommand(
+        'get_available_kits', { reload: true }, { silent: true }
+      )) as KitItem[];
 
-    this.setKits(availableKits);
+      this.setKits(availableKits);
+      return { success: true };
+    } catch (error: any) {
+      const errorMessage = error?.toString() || 'Failed to load available toolkits';
+      console.error('Failed to load available kits:', errorMessage);
+      // Keep existing kits if any, don't clear them on error
+      return { success: false, error: errorMessage };
+    }
   }
 
-  async reloadKits() {
-    await this.loadInstalledKit()
-    await this.loadAvailableKits()
+  async reloadKits(): Promise<{ kitsLoaded: boolean; kitsError?: string; installedLoaded: boolean; installedError?: string }> {
+    const installedResult = await this.loadInstalledKit();
+    const kitsResult = await this.loadAvailableKits();
+    return { 
+      kitsLoaded: kitsResult.success, 
+      kitsError: kitsResult.error,
+      installedLoaded: installedResult.success,
+      installedError: installedResult.error
+    };
   }
 }
 

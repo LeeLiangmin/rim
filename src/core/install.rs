@@ -204,22 +204,21 @@ impl<T> InstallConfiguration<'_, T> {
             .to_str()
             .map(ToOwned::to_owned)
             .context("`install-dir` cannot contains invalid unicode")?;
-        // This `unwrap` is safe here because we've already make sure the `install_dir`'s path can be
-        // converted to string with the `cargo_home` variable.
-        let rustup_home = self.rustup_home().to_str().unwrap().to_string();
+        // Both cargo_home and rustup_home are created from the same install_dir,
+        // so if cargo_home conversion succeeded, rustup_home should also succeed.
+        // However, we handle this explicitly for safety and resilience.
+        let rustup_home = self
+            .rustup_home()
+            .to_str()
+            .map(ToOwned::to_owned)
+            .context("`rustup-home` cannot contains invalid unicode")?;
 
-        let mut env_vars = Vec::from([
-            (RUSTUP_DIST_SERVER, self.rustup_dist_server().to_string()),
-            (RUSTUP_UPDATE_ROOT, self.rustup_update_root().to_string()),
-            (RUSTUP_DIST_SERVER, self.rustup_dist_server().to_string()),
-            (RUSTUP_UPDATE_ROOT, self.rustup_update_root().to_string()),
-            (RUSTUP_DIST_SERVER, self.rustup_dist_server().to_string()),
-            (RUSTUP_UPDATE_ROOT, self.rustup_update_root().to_string()),
+        let mut env_vars = vec![
             (RUSTUP_DIST_SERVER, self.rustup_dist_server().to_string()),
             (RUSTUP_UPDATE_ROOT, self.rustup_update_root().to_string()),
             (CARGO_HOME, cargo_home),
             (RUSTUP_HOME, rustup_home),
-        ]);
+        ];
 
         // Add proxy settings if has
         if let Some(proxy) = self.manifest.proxy_config() {
@@ -298,6 +297,114 @@ impl<T> InstallConfiguration<'_, T> {
 }
 
 impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
+    /// Check if a file is a nested archive that needs extraction.
+    /// Returns Some(archive_path) if the file is an archive, None otherwise.
+    /// 
+    /// This function uses multiple detection methods for resilience:
+    /// 1. Extension-based detection (fastest)
+    /// 2. Content-based detection (magic bytes)
+    /// 3. Load test (most reliable)
+    /// 4. Path comparison with original file
+    fn detect_nested_archive(&self, file_path: &Path, original_file: &Path) -> Option<PathBuf> {
+        // Safety check: ensure file exists and is actually a file
+        if !file_path.exists() || !file_path.is_file() {
+            return None;
+        }
+        
+        // Method 1: Extension-based detection (fastest)
+        let is_archive_by_ext = utils::Extractable::is_supported(file_path);
+        
+        // Method 2: Content-based detection (magic bytes) - more reliable
+        let is_archive_by_content = utils::Extractable::detect_format_from_content(file_path).is_some();
+        
+        // Method 3: Load test (most reliable, but slower)
+        // Only try if other methods failed, to avoid unnecessary I/O
+        let is_archive_by_load = if !is_archive_by_ext && !is_archive_by_content {
+            utils::Extractable::load(file_path, None).is_ok()
+        } else {
+            false
+        };
+        
+        if is_archive_by_ext || is_archive_by_content || is_archive_by_load {
+            let detection_method = if is_archive_by_ext {
+                "extension"
+            } else if is_archive_by_content {
+                "content (magic bytes)"
+            } else {
+                "load test"
+            };
+            info!("Found nested archive file '{}' (detected by {}), attempting extraction", 
+                file_path.display(), detection_method);
+            return Some(file_path.to_path_buf());
+        }
+        
+        // Method 4: Check if it's the original file (using canonicalize for reliable comparison)
+        // This handles cases where the file was copied/moved but path format changed
+        // This is especially important in WSL where path handling can be tricky
+        if let (Ok(file_canon), Ok(orig_canon)) = (
+            file_path.canonicalize(),
+            original_file.canonicalize()
+        ) {
+            if file_canon == orig_canon {
+                info!("Extracted path is the original archive file (canonicalized match), attempting extraction");
+                return Some(file_path.to_path_buf());
+            }
+        }
+        
+        // Method 5: Check filename pattern - if it looks like an archive filename
+        // This is a fallback for edge cases where other methods fail
+        if let Some(file_name) = file_path.file_name().and_then(|n| n.to_str()) {
+            let archive_extensions = [".zip", ".tar.gz", ".tar.xz", ".tgz", ".7z", ".gz", ".xz"];
+            if archive_extensions.iter().any(|ext| file_name.ends_with(ext)) {
+                // Try one more load test with explicit format hint
+                if let Some(ext) = archive_extensions.iter().find(|ext| file_name.ends_with(*ext)) {
+                    let format = ext.strip_prefix('.').unwrap_or(ext);
+                    if utils::Extractable::load(file_path, Some(format)).is_ok() {
+                        info!("Found nested archive '{}' by filename pattern ({}), attempting extraction", 
+                            file_path.display(), format);
+                        return Some(file_path.to_path_buf());
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+
+    /// Find the tool directory in a parent directory.
+    /// Looks for directories containing "bin" subdirectory or Cargo.toml (for crates).
+    fn find_tool_directory_in_parent(&self, parent: &Path) -> Result<Option<PathBuf>> {
+        if !parent.is_dir() {
+            return Ok(None);
+        }
+        
+        let entries: Vec<_> = std::fs::read_dir(parent)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .collect();
+        
+        // Look for a directory that contains "bin" subdirectory or Cargo.toml (for crates)
+        for entry in &entries {
+            if entry.is_dir() {
+                let bin_dir = entry.join("bin");
+                let cargo_toml = entry.join("Cargo.toml");
+                if (bin_dir.exists() && bin_dir.is_dir()) || cargo_toml.exists() {
+                    info!("Found tool directory in parent: {}", entry.display());
+                    return Ok(Some(entry.to_path_buf()));
+                }
+            }
+        }
+        
+        // If no bin directory found, but there's only one directory in parent, use that
+        let dirs: Vec<_> = entries.iter().filter(|p| p.is_dir()).collect();
+        if dirs.len() == 1 {
+            info!("Using single directory found in parent: {}", dirs[0].display());
+            return Ok(Some(dirs[0].to_path_buf()));
+        }
+        
+        Ok(None)
+    }
+
     /// Perform extraction or copy action base on the given path, with progress reporting.
     ///
     /// If `maybe_file` is a path to compressed file, this will try to extract it to `dest`;
@@ -368,114 +475,153 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
                 .with_progress_handler(Box::new(self.progress_handler.clone()));
             let extracted_path = extractable.extract_then_skip_solo_dir(dest, stop_keyword)?;
             
-            // Check if extract_then_skip_solo_dir returned a file instead of a directory
-            // This can happen if the archive structure is unexpected or extraction returned the original file
+            // Resilience: Check if extract_then_skip_solo_dir returned a file instead of a directory
+            // This is especially common with nested zip files (like ylong_* tools) on first extraction in WSL
+            // We need multiple layers of detection and recovery to handle this robustly
             if extracted_path.is_file() {
-                // Check if extracted_path is a zip/tar file that needs extraction
-                // Don't rely on direct path comparison as paths may differ in format (absolute vs relative, etc.)
-                let mut needs_extraction = false;
+                warn!("extract_then_skip_solo_dir returned a file instead of directory: {}", extracted_path.display());
                 
-                // If extracted_path is in dest directory, check if it's a supported archive format
-                if extracted_path.parent() == Some(dest) {
-                    // First try extension-based detection
-                    if utils::Extractable::is_supported(&extracted_path) {
-                        needs_extraction = true;
-                    } else {
-                        // Try content-based detection
-                        if let Some(detected_format) = utils::Extractable::detect_format_from_content(&extracted_path) {
-                            info!("Detected archive format '{}' for file '{}', attempting extraction", 
-                                detected_format, extracted_path.display());
-                            needs_extraction = true;
-                        } else {
-                            // Last resort: try to load it as an archive
-                            if utils::Extractable::load(&extracted_path, None).is_ok() {
-                                info!("Found archive file '{}' in dest directory, attempting extraction", 
-                                    extracted_path.display());
-                                needs_extraction = true;
+                // Layer 1: Check if extracted_path itself is a nested archive
+                if let Some(archive_path) = self.detect_nested_archive(&extracted_path, maybe_file) {
+                    info!("Detected nested archive in extracted_path, attempting recursive extraction");
+                    let handler = Box::new(self.progress_handler.clone());
+                    match extract_nested_archive(
+                        &archive_path,
+                        dest,
+                        stop_keyword,
+                        GlobalOpts::get().quiet,
+                        handler,
+                    ) {
+                        Ok(result) => return Ok(result),
+                        Err(e) => {
+                            warn!("Failed to extract nested archive '{}': {}", archive_path.display(), e);
+                            // Continue to try other recovery methods
+                        }
+                    }
+                }
+                
+                // Layer 2: Scan dest directory for any nested archives that might have been extracted
+                // This handles cases where extract_then_skip_solo_dir returned wrong path
+                if dest.is_dir() {
+                    if let Ok(entries) = std::fs::read_dir(dest) {
+                        for entry in entries.filter_map(|e| e.ok()) {
+                            let entry_path = entry.path();
+                            // Skip the extracted_path itself and the original archive
+                            if entry_path == extracted_path || entry_path == maybe_file {
+                                continue;
+                            }
+                            
+                            // Check if this entry is a nested archive
+                            if entry_path.is_file() {
+                                if let Some(archive_path) = self.detect_nested_archive(&entry_path, maybe_file) {
+                                    warn!("Found undetected nested archive '{}' in dest directory, attempting extraction", 
+                                        entry_path.display());
+                                    let handler = Box::new(self.progress_handler.clone());
+                                    match extract_nested_archive(
+                                        &archive_path,
+                                        dest,
+                                        stop_keyword,
+                                        GlobalOpts::get().quiet,
+                                        handler,
+                                    ) {
+                                        Ok(result) => return Ok(result),
+                                        Err(e) => {
+                                            warn!("Failed to extract nested archive '{}': {}", archive_path.display(), e);
+                                            // Continue checking other files
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
                 
-                // Also check if it's the original file (using canonicalize for reliable comparison)
-                // This handles cases where the file was copied/moved but path format changed
-                if !needs_extraction {
-                    if let (Ok(extracted_canon), Ok(maybe_canon)) = (
-                        extracted_path.canonicalize(),
-                        maybe_file.canonicalize()
-                    ) {
-                        if extracted_canon == maybe_canon {
-                            needs_extraction = true;
-                        }
-                    }
-                }
-                
-                if needs_extraction {
-                    // Extract nested archive recursively
-                    let handler = Box::new(self.progress_handler.clone());
-                    return extract_nested_archive(
-                        &extracted_path,
-                        dest,
-                        stop_keyword,
-                        GlobalOpts::get().quiet,
-                        handler,
-                    );
-                }
-                // If it's not extractable or doesn't need extraction, and it's a file,
-                // check if it's an executable file (like cargo-nextest)
-                // Also, if it's a file that was extracted (not a compressed archive),
-                // it might be an executable that just doesn't have the exec bit set yet
-                // In this case, we should allow it and let the caller handle it
+                // Layer 3: Check if it's an executable file (like cargo-nextest)
                 if utils::is_executable(&extracted_path) {
                     return Ok(extracted_path);
                 }
-                // If it's a file that was extracted from an archive (not the original archive file),
-                // it's likely an executable file that needs exec permissions set
-                // Allow it to proceed - Tool::from_path will handle it
+                
+                // Layer 4: If it's a file that was extracted from an archive (not the original archive file),
+                // it might be an executable file that needs exec permissions set
                 if extracted_path != maybe_file && !utils::Extractable::is_supported(&extracted_path) {
                     return Ok(extracted_path);
                 }
-                // If it's not an executable and not an extracted file, we can't handle it here
-                // Fall through to the directory check below which will provide a better error message
-            }
-            
-            // Ensure the extracted path is actually a directory
-            if !extracted_path.is_dir() {
-                // If it's not a directory, try to find the parent directory that contains bin/
+                
+                // Layer 5: Try to find tool directory in parent
                 if let Some(parent) = extracted_path.parent() {
                     let bin_in_parent = parent.join("bin");
                     if bin_in_parent.exists() && bin_in_parent.is_dir() {
                         info!("Found bin directory in parent, using parent directory: {}", parent.display());
                         return Ok(parent.to_path_buf());
                     }
-                    // If the extracted path is a file but parent is a directory, check if parent contains the actual tool directory
-                    if parent.is_dir() {
-                        // List contents of parent directory to find the actual tool directory
-                        let entries: Vec<_> = std::fs::read_dir(parent)?
-                            .filter_map(|e| e.ok())
-                            .map(|e| e.path())
-                            .collect();
-                        // Look for a directory that contains "bin" subdirectory or Cargo.toml (for crates)
-                        for entry in &entries {
-                            if entry.is_dir() {
-                                let bin_dir = entry.join("bin");
-                                let cargo_toml = entry.join("Cargo.toml");
-                                if (bin_dir.exists() && bin_dir.is_dir()) || cargo_toml.exists() {
-                                    info!("Found tool directory in parent: {}", entry.display());
-                                    return Ok(entry.to_path_buf());
-                                }
-                            }
-                        }
-                        // If no bin directory found, but there's only one directory in parent, use that
-                        let dirs: Vec<_> = entries.iter().filter(|p| p.is_dir()).collect();
-                        if dirs.len() == 1 {
-                            info!("Using single directory found in parent: {}", dirs[0].display());
-                            return Ok(dirs[0].to_path_buf());
+                    if let Ok(Some(tool_dir)) = self.find_tool_directory_in_parent(parent) {
+                        return Ok(tool_dir);
+                    }
+                }
+                
+                // Layer 6: Last resort - check dest directory for any directories
+                if dest.is_dir() {
+                    if let Ok(Some(tool_dir)) = self.find_tool_directory_in_parent(dest) {
+                        return Ok(tool_dir);
+                    }
+                }
+                
+                // If all recovery attempts failed, provide detailed error message
+                anyhow::bail!(
+                    "Extracted path is not a directory: {} (exists: {}, is_file: {}). \
+                    Tried 6 layers of detection and recovery (nested archive detection, dest directory scan, \
+                    executable check, parent directory search, dest directory search), but all failed. \
+                    This may indicate a corrupted or unexpected archive structure. \
+                    Please check the archive manually or report this issue.",
+                    extracted_path.display(),
+                    extracted_path.exists(),
+                    extracted_path.is_file()
+                );
+            }
+            
+            // Resilience: Ensure the extracted path is actually a directory
+            // If not, try multiple recovery methods before giving up
+            if !extracted_path.is_dir() {
+                // Recovery 1: Try to find the parent directory that contains bin/
+                if let Some(parent) = extracted_path.parent() {
+                    let bin_in_parent = parent.join("bin");
+                    if bin_in_parent.exists() && bin_in_parent.is_dir() {
+                        info!("Found bin directory in parent, using parent directory: {}", parent.display());
+                        return Ok(parent.to_path_buf());
+                    }
+                    // Recovery 2: Check if parent contains the actual tool directory
+                    if let Ok(Some(tool_dir)) = self.find_tool_directory_in_parent(parent) {
+                        return Ok(tool_dir);
+                    }
+                }
+                
+                // Recovery 3: Check dest directory for tool directories
+                if dest.is_dir() {
+                    if let Ok(Some(tool_dir)) = self.find_tool_directory_in_parent(dest) {
+                        return Ok(tool_dir);
+                    }
+                }
+                
+                // Recovery 4: If extracted_path is a file, try one more time to detect nested archive
+                if extracted_path.is_file() {
+                    if let Some(archive_path) = self.detect_nested_archive(&extracted_path, maybe_file) {
+                        warn!("Late detection: Found nested archive '{}', attempting extraction", archive_path.display());
+                        let handler = Box::new(self.progress_handler.clone());
+                        if let Ok(result) = extract_nested_archive(
+                            &archive_path,
+                            dest,
+                            stop_keyword,
+                            GlobalOpts::get().quiet,
+                            handler,
+                        ) {
+                            return Ok(result);
                         }
                     }
                 }
+                
                 anyhow::bail!(
-                    "Extracted path is not a directory: {} (exists: {}, is_file: {})",
+                    "Extracted path is not a directory: {} (exists: {}, is_file: {}). \
+                    Tried multiple recovery methods but failed.",
                     extracted_path.display(),
                     extracted_path.exists(),
                     extracted_path.is_file()
@@ -505,24 +651,8 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
                             }
                             // If it's not an executable, check if parent contains the tool directory
                             if let Some(parent) = extracted_path.parent() {
-                                if parent.is_dir() {
-                                    let entries: Vec<_> = std::fs::read_dir(parent)?
-                                        .filter_map(|e| e.ok())
-                                        .map(|e| e.path())
-                                        .collect();
-                                    for entry in &entries {
-                                        if entry.is_dir() {
-                                            let bin_dir = entry.join("bin");
-                                            let cargo_toml = entry.join("Cargo.toml");
-                                            if (bin_dir.exists() && bin_dir.is_dir()) || cargo_toml.exists() {
-                                                return Ok(entry.to_path_buf());
-                                            }
-                                        }
-                                    }
-                                    let dirs: Vec<_> = entries.iter().filter(|p| p.is_dir()).collect();
-                                    if dirs.len() == 1 {
-                                        return Ok(dirs[0].to_path_buf());
-                                    }
+                                if let Ok(Some(tool_dir)) = self.find_tool_directory_in_parent(parent) {
+                                    return Ok(tool_dir);
                                 }
                             }
                         }
@@ -712,7 +842,11 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
             return self.inc_progress(weight);
         }
 
-        let sub_progress_delta = weight / to_install.len() as u64;
+        // Safety: We've already checked that to_install is not empty above,
+        // but we use checked division for resilience against future code changes.
+        let sub_progress_delta = weight
+            .checked_div(to_install.len() as u64)
+            .unwrap_or(1); // Fallback to 1 if division fails (shouldn't happen)
 
         to_install = to_install.topological_sorted();
         // topological sort place the tool with more dependencies at the back,
@@ -881,93 +1015,154 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
         Ok(())
     }
 
+    /// Infer the filename from URL path segments.
+    /// Returns the last non-empty path segment, or an error if none found.
+    fn infer_filename_from_url(&self, url: &Url) -> Result<String> {
+        url.path_segments()
+            .ok_or_else(|| anyhow!("unsupported url format '{url}'"))?
+            .next_back()
+            .filter(|seg| !seg.is_empty())
+            .ok_or_else(|| anyhow!("'{url}' doesn't appear to be a downloadable file"))
+            .map(|s| s.to_string())
+    }
+
+    /// Infer file extension from URL or tool name if filename lacks extension.
+    /// Returns the filename with inferred extension if needed.
+    fn infer_file_extension(&self, filename: &str, url: &Url, tool_name: &str) -> String {
+        // If filename already has an extension, return as-is
+        if filename.contains('.') {
+            return filename.to_string();
+        }
+
+        let url_str = url.as_str();
+        
+        // Check URL for file type hints
+        if url_str.contains("win32-x64-archive") 
+            || url_str.contains("linux-x64") 
+            || url_str.contains("linux-arm64")
+            || url_str.contains(".zip") 
+            || url_str.contains("archive") {
+            return format!("{}.zip", filename);
+        }
+        
+        if url_str.contains(".tar.gz") || url_str.contains(".tgz") {
+            return format!("{}.tar.gz", filename);
+        }
+        
+        if url_str.contains(".tar.xz") {
+            return format!("{}.tar.xz", filename);
+        }
+        
+        if url_str.contains(".7z") {
+            return format!("{}.7z", filename);
+        }
+        
+        // Fallback: infer from known tool names
+        if matches!(tool_name, "vscode" | "vscodium" | "codearts-rust") {
+            return format!("{}.zip", filename);
+        }
+        
+        // No extension inferred, return original filename
+        filename.to_string()
+    }
+
+    /// Detect file format from content and rename if needed.
+    /// Returns the final file path (possibly renamed).
+    fn detect_and_rename_file_format(&self, file_path: &Path) -> Result<PathBuf> {
+        // If file doesn't exist or is already detectable by extension, return as-is
+        if !file_path.is_file() || utils::Extractable::is_supported(file_path) {
+            return Ok(file_path.to_path_buf());
+        }
+
+        // Try content-based detection
+        let Some(detected_format) = utils::Extractable::detect_format_from_content(file_path) else {
+            return Ok(file_path.to_path_buf());
+        };
+
+        // Get base name without extension
+        let base_name = file_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_else(|| {
+                file_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("download")
+            });
+
+        // Construct new filename with detected format
+        let new_name = if detected_format == "gz" {
+            // For .gz, check if it's actually .tar.gz
+            if base_name.ends_with(".tar") {
+                format!(
+                    "{}.tar.gz",
+                    base_name.strip_suffix(".tar").unwrap_or(base_name)
+                )
+            } else {
+                format!("{}.tar.gz", base_name)
+            }
+        } else {
+            format!("{}.{}", base_name, detected_format)
+        };
+
+        let new_path = file_path
+            .parent()
+            .ok_or_else(|| anyhow!("file path has no parent: {}", file_path.display()))?
+            .join(&new_name);
+
+        // Only rename if the new name is different
+        if new_path != file_path {
+            std::fs::rename(file_path, &new_path)?;
+            info!(
+                "Detected file format as '{}', renamed '{}' to '{}'",
+                detected_format,
+                file_path.display(),
+                new_path.display()
+            );
+        }
+
+        Ok(new_path)
+    }
+
+    /// Download a tool from URL and install it.
+    ///
+    /// This function handles:
+    /// 1. Creating a temporary directory for download
+    /// 2. Determining the filename (from tool info or URL)
+    /// 3. Inferring file extension if missing
+    /// 4. Downloading the file
+    /// 5. Detecting and correcting file format if needed
+    /// 6. Installing the tool from the downloaded file
     async fn download_and_try_install(
         &self,
         name: &str,
         url: &Url,
         info: &ToolInfo,
     ) -> Result<ToolRecord> {
+        // Step 1: Create temporary directory for download
         let temp_dir = self.create_temp_dir("download")?;
-        let mut downloaded_file_name: String = if let Some(name) = info.filename() {
-            name.to_string()
+
+        // Step 2: Determine filename
+        let filename = if let Some(fname) = info.filename() {
+            fname.to_string()
         } else {
-            url.path_segments()
-                .ok_or_else(|| anyhow!("unsupported url format '{url}'"))?
-                .next_back()
-                // Sadly, a path segment could be empty string, so we need to filter that out
-                .filter(|seg| !seg.is_empty())
-                .ok_or_else(|| anyhow!("'{url}' doesn't appear to be a downloadable file"))?
-                .to_string()
+            self.infer_filename_from_url(url)?
         };
-        
-        // If the downloaded file name doesn't have an extension, try to infer it from the URL or tool name
-        if !downloaded_file_name.contains('.') {
-            // Check if URL contains hints about file type
-            let url_str = url.as_str();
-            if url_str.contains("win32-x64-archive") || url_str.contains("linux-x64") || url_str.contains("linux-arm64") {
-                // VSCode archives are zip files
-                downloaded_file_name = format!("{}.zip", downloaded_file_name);
-            } else if url_str.contains(".zip") || url_str.contains("archive") {
-                downloaded_file_name = format!("{}.zip", downloaded_file_name);
-            } else if url_str.contains(".tar.gz") || url_str.contains(".tgz") {
-                downloaded_file_name = format!("{}.tar.gz", downloaded_file_name);
-            } else if url_str.contains(".tar.xz") {
-                downloaded_file_name = format!("{}.tar.xz", downloaded_file_name);
-            } else if url_str.contains(".7z") {
-                downloaded_file_name = format!("{}.7z", downloaded_file_name);
-            }
-            // If still no extension and it's a known tool, try to infer from tool name
-            else if name == "vscode" || name == "vscodium" || name == "codearts-rust" {
-                downloaded_file_name = format!("{}.zip", downloaded_file_name);
-            }
-        }
-        
-        let dest = temp_dir.path().join(downloaded_file_name);
+
+        // Step 3: Infer file extension if missing
+        let filename_with_ext = self.infer_file_extension(&filename, url, name);
+
+        // Step 4: Download the file
+        let dest = temp_dir.path().join(&filename_with_ext);
         utils::DownloadOpt::new(name, Box::new(self.progress_handler.clone()))
             .with_proxy(self.manifest.proxy_config().cloned())
             .download(url, &dest)
             .await?;
 
-        // After download, check if the file format can be detected from content
-        // If the extension doesn't match the actual format, try to detect and rename
-        let final_dest = if dest.is_file() && !utils::Extractable::is_supported(&dest) {
-            // File exists but extension-based detection failed, try content-based detection
-            if let Some(detected_format) = utils::Extractable::detect_format_from_content(&dest) {
-                // Get the base name without extension
-                let base_name = dest.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or_else(|| dest.file_name().and_then(|n| n.to_str()).unwrap_or("download"));
-                
-                // Construct new filename with detected format
-                let new_name = if detected_format == "gz" {
-                    // For .gz, check if it's actually .tar.gz by looking at the filename
-                    if base_name.ends_with(".tar") {
-                        format!("{}.tar.gz", base_name.strip_suffix(".tar").unwrap_or(base_name))
-                    } else {
-                        format!("{}.tar.gz", base_name)
-                    }
-                } else {
-                    format!("{}.{}", base_name, detected_format)
-                };
-                
-                let new_dest = dest.parent().unwrap().join(&new_name);
-                
-                // Only rename if the new name is different
-                if new_dest != dest {
-                    std::fs::rename(&dest, &new_dest)?;
-                    info!("Detected file format as '{}', renamed '{}' to '{}'", 
-                        detected_format, dest.display(), new_dest.display());
-                    new_dest
-                } else {
-                    dest
-                }
-            } else {
-                dest
-            }
-        } else {
-            dest
-        };
+        // Step 5: Detect and correct file format if needed
+        let final_dest = self.detect_and_rename_file_format(&dest)?;
 
+        // Step 6: Install the tool from downloaded file
         self.try_install_from_path(name, &final_dest, info, Some(temp_dir))
     }
 

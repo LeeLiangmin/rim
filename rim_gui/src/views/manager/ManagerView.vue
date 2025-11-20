@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { invokeCommand, KitItem, managerConf, ManagerOperation } from '@/utils';
-import { computed, onMounted, ref } from 'vue';
+import { computed, inject, onMounted, ref, type Ref } from 'vue';
 import { event } from '@tauri-apps/api';
 import { useCustomRouter } from '@/router';
 import { CliPayload, UpdatePayload } from '@/utils/types/payloads';
 
 const { routerPush } = useCustomRouter();
+
+// Inject error state and retry function from parent layout
+const kitsLoadError = inject<Ref<string | undefined>>('kitsLoadError', ref(undefined));
+const isLoadingKits = inject<Ref<boolean>>('isLoadingKits', ref(false));
+const retryLoadKits = inject<() => Promise<void>>('retryLoadKits', async () => {});
 
 const installedKit = computed(() => managerConf.getInstalled());
 const availableKits = computed(() => managerConf.getKits());
@@ -93,6 +98,30 @@ onMounted(async () => {
       </div>
 
       <div :class="['toolkit-list', displayFormat]">
+        <!-- Error state: show error message and retry button -->
+        <base-card v-if="kitsLoadError" class="error-card" ml="1rem" mr="1.2rem" flex="~ col" gap="1rem">
+          <div flex="~ col" gap="0.5rem">
+            <span class="error-title">{{ $t('failed_to_load_toolkits') || 'Failed to load available toolkits' }}</span>
+            <span class="error-message" c-regular>{{ kitsLoadError }}</span>
+          </div>
+          <div flex="~ gap-1rem">
+            <base-button theme="primary" @click="retryLoadKits" :disabled="isLoadingKits">
+              {{ isLoadingKits ? ($t('loading') || 'Loading...') : ($t('retry') || 'Retry') }}
+            </base-button>
+          </div>
+        </base-card>
+        
+        <!-- Loading state -->
+        <base-card v-else-if="isLoadingKits && availableKits.length === 0" class="loading-card" ml="1rem" mr="1.2rem" text="center">
+          <p text="regular">{{ $t('loading_toolkits') || 'Loading available toolkits...' }}</p>
+        </base-card>
+        
+        <!-- Empty state -->
+        <base-card v-else-if="!isLoadingKits && availableKits.length === 0" class="empty-card" ml="1rem" mr="1.2rem" text="center">
+          <p text="regular">{{ $t('no_available_toolkits') || 'No available toolkits' }}</p>
+        </base-card>
+        
+        <!-- Success state: show toolkits -->
         <base-card class="toolkit-item" v-for="toolkit in availableKits" :key="toolkit.manifestURL"
           :interactive="displayFormat === 'card'" @click="onCardClick(toolkit.manifestURL)">
           <div flex="~ col">
@@ -224,5 +253,29 @@ onMounted(async () => {
 
 .toolkit-list.card .toolkit-item * {
   cursor: pointer;
+}
+
+.error-card {
+  padding: 2rem;
+  border: 2px solid rgba(255, 59, 48, 0.3);
+  background: rgba(255, 59, 48, 0.05);
+}
+
+.error-title {
+  font-weight: 600;
+  font-size: clamp(16px, 2.2vh, 24px);
+  color: #ff3b30;
+}
+
+.error-message {
+  font-size: clamp(12px, 1.8vh, 16px);
+  color: rgba(0, 0, 0, 0.6);
+  word-break: break-word;
+}
+
+.loading-card,
+.empty-card {
+  padding: 2rem;
+  text-align: center;
 }
 </style>

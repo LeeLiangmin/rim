@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeMount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeMount, onMounted, provide, ref, watch } from 'vue';
 import { getAppNameWithVersion, managerConf } from '@/utils';
 import { useCustomRouter } from '@/router';
 import { useI18n } from 'vue-i18n';
@@ -24,8 +24,31 @@ async function refreshLabels() {
   footerText.value = (await getAppNameWithVersion()).join(' ');
 }
 
+const loadError = ref<string | undefined>(undefined);
+const isLoadingKits = ref(false);
+
+async function loadManagerData() {
+  isLoadingKits.value = true;
+  loadError.value = undefined;
+  try {
+    const result = await managerConf.load();
+    if (!result.kitsLoaded) {
+      loadError.value = result.kitsError || 'Failed to load available toolkits';
+    }
+  } catch (error: any) {
+    loadError.value = error?.toString() || 'Failed to load manager data';
+  } finally {
+    isLoadingKits.value = false;
+  }
+}
+
+// Provide error state and retry function to child components
+provide('kitsLoadError', loadError);
+provide('isLoadingKits', isLoadingKits);
+provide('retryLoadKits', loadManagerData);
+
 onBeforeMount(async () => {
-  await managerConf.load();
+  await loadManagerData();
 });
 
 onMounted(async () => {
