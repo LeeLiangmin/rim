@@ -92,7 +92,13 @@ pub(super) async fn execute_installer(installer: &Installer) -> Result<ExecStatu
         && ask_to_try_demo
         && common::confirm(t!("question_try_demo"), true)?
     {
-        try_it::try_it(Some(&install_dir))?;
+        // On Linux CLI mode, don't open editor automatically
+        #[cfg(target_os = "linux")]
+        let open_editor = false;
+        #[cfg(not(target_os = "linux"))]
+        let open_editor = true;
+        
+        try_it::try_it(Some(&install_dir), open_editor)?;
     }
 
     #[cfg(unix)]

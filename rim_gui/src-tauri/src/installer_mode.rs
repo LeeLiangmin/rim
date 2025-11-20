@@ -29,6 +29,7 @@ pub(super) fn main(msg_recv: Receiver<String>) -> Result<()> {
             post_installation_opts,
             toolkit_name,
             toolkit_version,
+            is_linux,
         ])
         .setup(|app| {
             common::setup_installer_window(app, msg_recv)?;
@@ -186,6 +187,11 @@ async fn updated_package_sources(
 }
 
 #[tauri::command]
+fn is_linux() -> bool {
+    cfg!(target_os = "linux")
+}
+
+#[tauri::command]
 fn post_installation_opts(
     app: AppHandle,
     install_dir: String,
@@ -210,7 +216,8 @@ fn post_installation_opts(
 
     std::env::set_var("MODE", "manager");
     if open {
-        try_it(Some(&install_dir))?;
+        // In GUI mode, always open editor when requested
+        try_it(Some(&install_dir), true)?;
     } else {
         app.exit(0);
     }

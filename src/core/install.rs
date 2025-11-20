@@ -302,16 +302,71 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
     ///
     /// If `maybe_file` is a path to compressed file, this will try to extract it to `dest`;
     /// otherwise this will copy that file into dest.
-    fn extract_or_copy_to_with_progress(&self, maybe_file: &Path, dest: &Path) -> Result<PathBuf> {
+    /// 
+    /// `stop_keyword` is used to determine when to stop skipping solo directories during extraction.
+    /// For tools with bin/ directory, use "bin". For crate tools, use None to skip all solo dirs.
+    fn extract_or_copy_to_with_progress(&self, maybe_file: &Path, dest: &Path, stop_keyword: Option<&str>) -> Result<PathBuf> {
+        // Helper function to recursively extract nested archives
+        fn extract_nested_archive(
+            archive_path: &Path,
+            dest: &Path,
+            stop_keyword: Option<&str>,
+            quiet: bool,
+            progress_handler: Box<dyn rim_common::utils::ProgressHandler>,
+        ) -> Result<PathBuf> {
+            let mut extractable = utils::Extractable::load(archive_path, None)?;
+            extractable = extractable
+                .quiet(quiet)
+                .with_progress_handler(progress_handler);
+            extractable.extract_to(dest)?;
+            
+            // Find the actual directory after extraction
+            let entries: Vec<_> = std::fs::read_dir(dest)?
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p != archive_path)
+                .collect();
+            
+            // First, check for nested archives that need further extraction
+            for entry in &entries {
+                if entry.is_file() && utils::Extractable::is_supported(entry) {
+                    // Found a nested archive, extract it recursively
+                    let nested_handler = Box::new(rim_common::utils::HiddenProgress);
+                    return extract_nested_archive(entry, dest, stop_keyword, quiet, nested_handler);
+                }
+            }
+            
+            // Look for directories with bin/ or Cargo.toml
+            for entry in &entries {
+                if entry.is_dir() {
+                    let bin_dir = entry.join("bin");
+                    let cargo_toml = entry.join("Cargo.toml");
+                    if (bin_dir.exists() && bin_dir.is_dir()) || cargo_toml.exists() {
+                        return Ok(entry.to_path_buf());
+                    }
+                }
+            }
+            
+            // If no bin/Cargo.toml found, but there's only one directory, use that
+            let dirs: Vec<_> = entries.iter().filter(|p| p.is_dir()).collect();
+            if dirs.len() == 1 {
+                return Ok(dirs[0].to_path_buf());
+            }
+            
+            // If still no directory found, return dest itself
+            Ok(dest.to_path_buf())
+        }
+        
         if let Ok(mut extractable) = utils::Extractable::load(maybe_file, None) {
             // For VSCode and similar tools, we want to skip solo directories until we find
             // the actual tool directory (which contains bin/, Code.exe, etc.)
             // Using "bin" as stop keyword will stop at the directory containing bin/
+            // For crate tools, use None to skip all solo directories, then find Cargo.toml
             // Note: extract_then_skip_solo_dir internally calls extract_to, so we don't need to call it separately
             extractable = extractable
                 .quiet(GlobalOpts::get().quiet)
                 .with_progress_handler(Box::new(self.progress_handler.clone()));
-            let extracted_path = extractable.extract_then_skip_solo_dir(dest, Some("bin"))?;
+            let extracted_path = extractable.extract_then_skip_solo_dir(dest, stop_keyword)?;
             
             // Check if extract_then_skip_solo_dir returned a file instead of a directory
             // This can happen if the archive structure is unexpected or extraction returned the original file
@@ -356,40 +411,15 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
                 }
                 
                 if needs_extraction {
-                    // Extract directly to dest
-                    let mut extractable = utils::Extractable::load(&extracted_path, None)?;
-                    extractable = extractable
-                        .quiet(GlobalOpts::get().quiet)
-                        .with_progress_handler(Box::new(self.progress_handler.clone()));
-                    extractable.extract_to(dest)?;
-                    
-                    // Now try to find the actual directory, excluding the zip file itself
-                    let entries: Vec<_> = std::fs::read_dir(dest)?
-                        .filter_map(|e| e.ok())
-                        .map(|e| e.path())
-                        .filter(|p| {
-                            // Exclude the zip/tar file that was just extracted
-                            p != &extracted_path && (p.is_dir() || (p.is_file() && !utils::Extractable::is_supported(p)))
-                        })
-                        .collect();
-                    
-                    // Look for a directory that contains "bin" subdirectory or Cargo.toml (for crates)
-                    for entry in &entries {
-                        if entry.is_dir() {
-                            let bin_dir = entry.join("bin");
-                            let cargo_toml = entry.join("Cargo.toml");
-                            if (bin_dir.exists() && bin_dir.is_dir()) || cargo_toml.exists() {
-                                return Ok(entry.to_path_buf());
-                            }
-                        }
-                    }
-                    // If no bin directory found, but there's only one directory in dest, use that
-                    let dirs: Vec<_> = entries.iter().filter(|p| p.is_dir()).collect();
-                    if dirs.len() == 1 {
-                        return Ok(dirs[0].to_path_buf());
-                    }
-                    // If still no directory found, return dest itself
-                    return Ok(dest.to_path_buf());
+                    // Extract nested archive recursively
+                    let handler = Box::new(self.progress_handler.clone());
+                    return extract_nested_archive(
+                        &extracted_path,
+                        dest,
+                        stop_keyword,
+                        GlobalOpts::get().quiet,
+                        handler,
+                    );
                 }
                 // If it's not extractable or doesn't need extraction, and it's a file,
                 // check if it's an executable file (like cargo-nextest)
@@ -465,7 +495,7 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
                         extractable = extractable
                             .quiet(GlobalOpts::get().quiet)
                             .with_progress_handler(Box::new(self.progress_handler.clone()));
-                        let extracted_path = extractable.extract_then_skip_solo_dir(dest, Some("bin"))?;
+                        let extracted_path = extractable.extract_then_skip_solo_dir(dest, stop_keyword)?;
                         
                         // Handle the extracted path (same logic as above)
                         if extracted_path.is_file() {
@@ -953,7 +983,14 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
             path.to_path_buf()
         } else if utils::Extractable::is_supported(path) {
             let extract_temp = self.create_temp_dir(name)?;
-            let tool_installer_path = self.extract_or_copy_to_with_progress(path, extract_temp.path())?;
+            // Determine stop keyword based on tool kind
+            // For crate tools, use None to skip all solo directories, then find Cargo.toml
+            // For other tools, use "bin" to stop at directory containing bin/
+            let stop_keyword = match info.kind() {
+                Some(rim_common::types::ToolKind::Crate) => None,
+                _ => Some("bin"),
+            };
+            let tool_installer_path = self.extract_or_copy_to_with_progress(path, extract_temp.path(), stop_keyword)?;
             
             // For Executables kind, the extracted path can be a file (single executable)
             // Also, if kind is not specified but the extracted path is a single executable file,

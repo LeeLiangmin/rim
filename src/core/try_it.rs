@@ -6,8 +6,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Export an example `cargo` project, then open it with `VSCode` editor or `file explorer`.
-pub fn try_it(path: Option<&Path>) -> Result<()> {
+/// Export an example `cargo` project to the specified path.
+/// Returns the path to the exported project directory.
+pub fn export_demo_project(path: Option<&Path>) -> Result<PathBuf> {
     let path_to_init = if let Some(p) = path {
         p.to_path_buf()
     } else {
@@ -21,11 +22,14 @@ pub fn try_it(path: Option<&Path>) -> Result<()> {
         "{}",
         t!("demo_project_exported", dir = example_dir.display())
     );
+    
+    Ok(example_dir)
+}
 
-    // attempts to open the directory with `VS-Code`, if that didn't work
-    // open directory using file explorer.
-    // **smh** this does not work on devices without desktop environment ofc.
-
+/// Open a project directory with `VSCode` editor or file explorer.
+/// This function attempts to open the directory with VS-Code first,
+/// if that didn't work, it opens the directory using file explorer.
+pub fn open_project(project_dir: &Path) -> Result<()> {
     #[cfg(target_os = "windows")]
     let file_explorer = "explorer.exe";
     #[cfg(target_os = "linux")]
@@ -38,8 +42,23 @@ pub fn try_it(path: Option<&Path>) -> Result<()> {
         .find_map(|p| utils::cmd_exist(p).then_some(p.as_str()))
         .unwrap_or(file_explorer);
     // Try to open the project, but don't do anything if it fails cuz it's not critical.
-    _ = run!(program, example_dir);
+    _ = run!(program, project_dir);
     Ok(())
+}
+
+/// Export an example `cargo` project, then optionally open it with `VSCode` editor or `file explorer`.
+/// 
+/// # Arguments
+/// * `path` - Optional path to export the project to. If None, uses current directory.
+/// * `open_editor` - Whether to open the project with an editor after export.
+pub fn try_it(path: Option<&Path>, open_editor: bool) -> Result<PathBuf> {
+    let example_dir = export_demo_project(path)?;
+    
+    if open_editor {
+        open_project(&example_dir)?;
+    }
+    
+    Ok(example_dir)
 }
 
 struct ExampleTemplate<'a> {
