@@ -227,6 +227,7 @@
   "uninstall_confirmation": "Are you sure you want to uninstall %{name}?",
   "uninstall_env_config": "Removing environment variables...",
   "uninstall_finished": "Uninstall Finished",
+  "uninstall_product_removed": "The selected product has been removed from your computer.",
   "uninstall_rust_toolchain_failed": "Unable to remove Rust toolchain",
   "uninstall_self": "Removing self & wrapping up",
   "uninstall_self_question": "Uninstall this application as well",

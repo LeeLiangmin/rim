@@ -227,6 +227,7 @@
   "uninstall_confirmation": "是否确认卸载 %{name}?",
   "uninstall_env_config": "正在移除环境变量配置...",
   "uninstall_finished": "卸载完成",
+  "uninstall_product_removed": "所选产品已经从您的电脑移除。",
   "uninstall_rust_toolchain_failed": "无法卸载 Rust 工具链",
   "uninstall_self": "正在卸载此管理程序...",
   "uninstall_self_question": "同时卸载此应用程序",

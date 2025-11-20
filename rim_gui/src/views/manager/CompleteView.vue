@@ -18,13 +18,13 @@ function closeOrReturn() {
 
 <template>
   <section flex="~ col">
-    <h4 ml="12px">卸载完成</h4>
+    <h4 ml="12px">{{ $t('uninstall_finished') }}</h4>
     <div flex="1" p="12px">
-      <p>所选产品已经从您的电脑移除。</p>
+      <p>{{ $t('uninstall_product_removed') }}</p>
     </div>
     <div basis="60px" flex="~ justify-end items-center">
       <base-button theme="primary" mr="12px" @click="closeOrReturn"
-        >{{ isUninstallManger ? "关闭" : "返回" }}</base-button
+        >{{ isUninstallManger ? $t('close') : $t('back') }}</base-button
       >
     </div>
   </section>
