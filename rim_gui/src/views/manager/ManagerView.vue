@@ -18,20 +18,47 @@ const latestToolkitUrl = ref('');
 
 const displayFormat = ref<'list' | 'card'>('list');
 
+// Track installation errors for each toolkit URL
+const installErrors = ref<Map<string, string>>(new Map());
+const isInstalling = ref<Map<string, boolean>>(new Map());
+
 function uninstall() {
   managerConf.setOperation(ManagerOperation.UninstallToolkit);
   routerPush('/manager/uninstall');
 }
 
 async function install(url: string) {
-  const toolkit = await invokeCommand('get_toolkit_from_url', { url: url }) as KitItem;
-  await managerConf.setCurrent(toolkit);
-  managerConf.setOperation(ManagerOperation.Update);
-  routerPush('/manager/change');
+  // Check if this is a retry (previous error exists)
+  const isRetry = installErrors.value.has(url);
+  
+  // Clear previous error for this URL
+  installErrors.value.delete(url);
+  isInstalling.value.set(url, true);
+  
+  try {
+    // If retrying, force refresh to ensure a fresh download
+    const toolkit = await invokeCommand('get_toolkit_from_url', { 
+      url: url, 
+      force_refresh: isRetry 
+    }, { silent: true }) as KitItem;
+    await managerConf.setCurrent(toolkit);
+    managerConf.setOperation(ManagerOperation.Update);
+    routerPush('/manager/change');
+  } catch (error: any) {
+    // Store error message for this URL
+    const errorMessage = error?.toString() || String(error) || 'Unknown error occurred';
+    installErrors.value.set(url, errorMessage);
+  } finally {
+    isInstalling.value.delete(url);
+  }
 }
 
-function onCardClick(url: string) {
-  if (displayFormat.value === 'card') install(url)
+function getInstallError(url: string): string | undefined {
+  return installErrors.value.get(url);
+}
+
+function isInstallingToolkit(url: string): boolean {
+  return isInstalling.value.get(url) || false;
 }
 
 onMounted(async () => {
@@ -123,7 +150,8 @@ onMounted(async () => {
         
         <!-- Success state: show toolkits -->
         <base-card class="toolkit-item" v-for="toolkit in availableKits" :key="toolkit.manifestURL"
-          :interactive="displayFormat === 'card'" @click="onCardClick(toolkit.manifestURL)">
+          :interactive="displayFormat === 'card' && !getInstallError(toolkit.manifestURL)" 
+          @click="displayFormat === 'card' && !getInstallError(toolkit.manifestURL) ? install(toolkit.manifestURL) : null">
           <div flex="~ col">
             <span class="toolkit-name">
               {{ toolkit.name }}
@@ -132,10 +160,38 @@ onMounted(async () => {
             </span>
             <span class="toolkit-version">{{ toolkit.version }}</span>
             <span mt="1rem" c-regular>{{ toolkit.desc }}</span>
+            
+            <!-- Error message -->
+            <div v-if="getInstallError(toolkit.manifestURL)" class="install-error" mt="1rem" flex="~ col" gap="0.5rem">
+              <span class="error-text" c-regular>{{ getInstallError(toolkit.manifestURL) }}</span>
+              <base-button 
+                v-if="displayFormat === 'card'"
+                theme="primary" 
+                :disabled="isInstallingToolkit(toolkit.manifestURL)"
+                @click.stop="install(toolkit.manifestURL)"
+                mt="0.5rem">
+                {{ isInstallingToolkit(toolkit.manifestURL) ? ($t('retrying') || 'Retrying...') : ($t('retry') || 'Retry') }}
+              </base-button>
+            </div>
           </div>
           <div class="button-container" v-if="displayFormat === 'list'">
-            <base-button class="button" theme="primary" @click="install(toolkit.manifestURL)">{{ $t('install')
-              }}</base-button>
+            <base-button 
+              v-if="!getInstallError(toolkit.manifestURL)"
+              class="button" 
+              theme="primary" 
+              :disabled="isInstallingToolkit(toolkit.manifestURL)"
+              @click="install(toolkit.manifestURL)">
+              {{ isInstallingToolkit(toolkit.manifestURL) ? ($t('installing') || 'Installing...') : $t('install') }}
+            </base-button>
+            <div v-else flex="~ col" gap="0.5rem">
+              <base-button 
+                class="button" 
+                theme="primary" 
+                :disabled="isInstallingToolkit(toolkit.manifestURL)"
+                @click="install(toolkit.manifestURL)">
+                {{ isInstallingToolkit(toolkit.manifestURL) ? ($t('retrying') || 'Retrying...') : ($t('retry') || 'Retry') }}
+              </base-button>
+            </div>
           </div>
         </base-card>
       </div>
@@ -277,5 +333,19 @@ onMounted(async () => {
 .empty-card {
   padding: 2rem;
   text-align: center;
+}
+
+.install-error {
+  padding: 0.75rem;
+  background: rgba(255, 59, 48, 0.05);
+  border: 1px solid rgba(255, 59, 48, 0.2);
+  border-radius: 4px;
+}
+
+.error-text {
+  font-size: clamp(11px, 1.5vh, 14px);
+  color: #ff3b30;
+  word-break: break-word;
+  line-height: 1.4;
 }
 </style>

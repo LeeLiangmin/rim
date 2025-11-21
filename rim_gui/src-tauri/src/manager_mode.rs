@@ -5,7 +5,7 @@ use crate::progress::GuiProgress;
 use crate::{common, error::Result};
 use anyhow::Context;
 use rim::update::UpdateOpt;
-use rim::{get_toolkit_manifest, AppInfo};
+use rim::{clear_cached_manifest, get_toolkit_manifest, AppInfo};
 use rim::{
     toolkit::{self, Toolkit},
     update,
@@ -113,10 +113,15 @@ async fn check_updates_on_startup(app: AppHandle) -> Result<()> {
 /// the URL of that toolkit was pass to this function, which we can download and
 /// deserialized the downloaded toolset-manifest and convert it to an installable toolkit format.
 #[tauri::command]
-async fn get_toolkit_from_url(url: String) -> Result<Toolkit> {
+async fn get_toolkit_from_url(url: String, force_refresh: Option<bool>) -> Result<Toolkit> {
     // the `url` input was converted from `Url`, so it will definitely be convert back without issue,
     // thus the below line should never panic
     let url_ = Url::parse(&url)?;
+
+    // If force_refresh is true, clear the cache to ensure a fresh download
+    if force_refresh.unwrap_or(false) {
+        clear_cached_manifest(Some(url_.clone())).await;
+    }
 
     // load the manifest for components information
     let manifest = get_toolkit_manifest(Some(url_), false).await?;

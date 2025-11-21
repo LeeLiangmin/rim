@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use rim_common::types::{TomlParser, ToolInfo, ToolkitManifest};
 use rim_common::utils::{self, HiddenProgress};
 use serde::de::DeserializeOwned;
@@ -318,13 +318,194 @@ pub async fn get_toolkit_manifest(url: Option<Url>, insecure: bool) -> Result<To
         } else {
             debug!("downloading toolset manifest from {url}");
             let temp = utils::make_temp_file("toolset-manifest-", None)?;
+            let temp_path = temp.path();
+            debug!("temporary file created at: {}", temp_path.display());
+            debug!("file exists before download: {}", temp_path.exists());
 
             // this file is very small, no need for progress bar.
-            utils::DownloadOpt::new("toolset manifest", Box::new(HiddenProgress))
+            let download_result = utils::DownloadOpt::new("toolset manifest", Box::new(HiddenProgress))
                 .insecure(insecure)
-                .download(url, temp.path())
-                .await?;
-            ToolkitManifest::load(temp.path())?
+                .download(url, temp_path)
+                .await;
+            
+            match download_result {
+                Ok(()) => {
+                    debug!("download completed successfully");
+                }
+                Err(e) => {
+                    warn!("download failed: {}", e);
+                    warn!("file exists after failed download: {}", temp_path.exists());
+                    if temp_path.exists() {
+                        if let Ok(metadata) = std::fs::metadata(temp_path) {
+                            warn!("file size after failed download: {} bytes", metadata.len());
+                        }
+                    }
+                    return Err(e);
+                }
+            }
+            
+            // Verify file exists and get size immediately after download
+            if !temp_path.exists() {
+                anyhow::bail!(
+                    "downloaded file does not exist at '{}' after download from '{}'",
+                    temp_path.display(), url
+                );
+            }
+            
+            let file_size = std::fs::metadata(temp_path)
+                .with_context(|| format!("failed to get metadata for downloaded file from '{}'", url))?
+                .len();
+            
+            debug!("file exists after download: true, size: {} bytes", file_size);
+            
+            if file_size == 0 {
+                warn!("WARNING: downloaded file is 0 bytes. File path: {}", temp_path.display());
+                anyhow::bail!(
+                    "downloaded toolset manifest file is empty (0 bytes) from '{}'. File saved at: {}",
+                    url, temp_path.display()
+                );
+            }
+            
+            // Read file content
+            debug!("attempting to read file content from: {}", temp_path.display());
+            let file_content = match std::fs::read_to_string(temp_path) {
+                Ok(content) => {
+                    debug!("successfully read file content, length: {} characters", content.len());
+                    content
+                }
+                Err(e) => {
+                    warn!("failed to read file as string: {}", e);
+                    warn!("file still exists: {}", temp_path.exists());
+                    if temp_path.exists() {
+                        if let Ok(metadata) = std::fs::metadata(temp_path) {
+                            warn!("file metadata - size: {} bytes, is_file: {}", metadata.len(), metadata.is_file());
+                        }
+                        // Try reading as bytes
+                        if let Ok(bytes) = std::fs::read(temp_path) {
+                            warn!("file as bytes (first 200): {:?}", bytes.iter().take(200).collect::<Vec<_>>());
+                        }
+                    }
+                    return Err(e).with_context(|| format!("failed to read downloaded toolset manifest from '{}'", url));
+                }
+            };
+            
+            debug!("file content length: {} chars, first 100 chars: {:?}", 
+                file_content.len(),
+                file_content.chars().take(100).collect::<String>());
+            
+            // Check if file is empty or contains only whitespace
+            let trimmed_content = file_content.trim();
+            debug!("trimmed content length: {} chars", trimmed_content.len());
+            
+            if trimmed_content.is_empty() {
+                warn!("file content is empty or whitespace only");
+                warn!("original content length: {}, trimmed length: 0", file_content.len());
+                anyhow::bail!(
+                    "downloaded toolset manifest file contains only whitespace from '{}' (file size: {} bytes, content length: {} chars). File saved at: {}",
+                    url, file_size, file_content.len(), temp_path.display()
+                );
+            }
+            
+            // Check if the content looks like HTML (common error page response)
+            if trimmed_content.starts_with('<') || trimmed_content.starts_with("<!DOCTYPE") || trimmed_content.starts_with("<html") {
+                let preview = trimmed_content.lines().take(5).collect::<Vec<_>>().join("\n");
+                anyhow::bail!(
+                    "downloaded file from '{}' appears to be HTML (error page) instead of TOML. File size: {} bytes. Content preview:\n{}",
+                    url, file_size, preview
+                );
+            }
+            
+            // Remove BOM (Byte Order Mark) if present, which can cause TOML parsing errors
+            // BOM can appear at the beginning of UTF-8 files and causes "parse error at line 1, column 1"
+            let cleaned_content = file_content
+                .strip_prefix('\u{FEFF}')
+                .unwrap_or(&file_content);
+            
+            // Write cleaned content back to file to ensure consistency
+            // This also ensures the path field is set correctly when loading
+            std::fs::write(temp_path, cleaned_content)
+                .with_context(|| format!("failed to write cleaned toolset manifest to temporary file"))?;
+            
+            // Try to parse the manifest and provide helpful error messages
+            debug!("attempting to parse TOML from: {}", temp_path.display());
+            debug!("file still exists before parsing: {}", temp_path.exists());
+            
+            match ToolkitManifest::load(temp_path) {
+                Ok(manifest) => {
+                    debug!("TOML parsing successful");
+                    manifest
+                }
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    warn!("TOML parsing failed: {}", error_msg);
+                    warn!("file still exists after parsing error: {}", temp_path.exists());
+                    
+                    // Save a copy of the file for debugging
+                    let debug_dir = std::env::temp_dir().join("rim_debug_manifests");
+                    if let Err(debug_err) = std::fs::create_dir_all(&debug_dir) {
+                        warn!("failed to create debug directory '{}': {}", debug_dir.display(), debug_err);
+                    } else {
+                        // Create a filename from URL
+                        let url_filename = url.path_segments()
+                            .and_then(|segments| segments.last())
+                            .unwrap_or("manifest.toml");
+                        let host_part = url.host_str()
+                            .map(|h| h.replace('.', "_"))
+                            .unwrap_or_else(|| "unknown".to_string());
+                        let debug_file = debug_dir.join(format!("{}_{}", host_part, url_filename));
+                        
+                        if let Err(copy_err) = std::fs::copy(temp_path, &debug_file) {
+                            warn!("failed to copy file to debug location '{}': {}", debug_file.display(), copy_err);
+                        } else {
+                            warn!("file saved to debug location: {}", debug_file.display());
+                        }
+                    }
+                    
+                    // Check for common TOML parsing errors and provide helpful messages
+                    let helpful_msg = if error_msg.contains("missing field") {
+                        if error_msg.contains("toolchain") || error_msg.contains("rust") {
+                            format!(
+                                "toolset manifest from '{}' is missing required 'toolchain' section (or '[rust]' section). \
+                                Please ensure the manifest contains a '[rust]' or '[toolchain]' section with at least a 'version' field.",
+                                url
+                            )
+                        } else {
+                            format!(
+                                "toolset manifest from '{}' is missing required field(s). Error: {}",
+                                url, error_msg
+                            )
+                        }
+                    } else if error_msg.contains("parse error") && error_msg.contains("line 1") {
+                        format!(
+                            "toolset manifest from '{}' has invalid TOML format. \
+                            The file may be corrupted, empty, or not a valid TOML file. \
+                            Original error: {}. File saved at: {}",
+                            url, error_msg, temp_path.display()
+                        )
+                    } else {
+                        format!(
+                            "failed to parse toolset manifest from '{}'. Error: {}. File saved at: {}",
+                            url, error_msg, temp_path.display()
+                        )
+                    };
+                    
+                    // Include a preview of the file content for debugging
+                    let content_preview: String = cleaned_content
+                        .lines()
+                        .take(10)
+                        .enumerate()
+                        .map(|(i, line)| format!("  {}: {}", i + 1, line))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    
+                    anyhow::bail!(
+                        "{}\n\nFile content preview (first 10 lines):\n{}\n\nOriginal file saved at: {}",
+                        helpful_msg,
+                        content_preview,
+                        temp_path.display()
+                    );
+                }
+            }
         }
     } else {
         debug!("loading built-in toolset manifest");
@@ -340,6 +521,21 @@ pub async fn get_toolkit_manifest(url: Option<Url>, insecure: bool) -> Result<To
     guard.insert(url, manifest.clone());
 
     Ok(manifest)
+}
+
+/// Clear the cached manifest for a specific URL, forcing a fresh download on next request.
+/// This is useful when a download fails and you want to retry without using cached data.
+#[allow(dead_code)] // Used by Tauri commands in binary targets
+pub async fn clear_cached_manifest(url: Option<Url>) {
+    static CACHED_MANIFESTS: OnceLock<Mutex<HashMap<Option<Url>, ToolkitManifest>>> =
+        OnceLock::new();
+    
+    if let Some(mutex) = CACHED_MANIFESTS.get() {
+        let mut guard = mutex.lock().await;
+        if guard.remove(&url).is_some() {
+            debug!("cleared cached toolset manifest for URL: {:?}", url);
+        }
+    }
 }
 
 #[cfg(test)]

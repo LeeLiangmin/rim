@@ -18,8 +18,8 @@ pub use core::try_it::try_it;
 pub use core::uninstall::UninstallConfiguration;
 pub use core::{components, toolkit, update, AppInfo, GlobalOpts, Mode, ToolkitManifestExt};
 pub use core::{
-    default_cargo_registry, default_rustup_dist_server, default_rustup_update_root,
-    get_toolkit_manifest,
+    clear_cached_manifest, default_cargo_registry, default_rustup_dist_server,
+    default_rustup_update_root, get_toolkit_manifest,
 };
 
 i18n!("locales", fallback = "en-US");
