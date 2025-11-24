@@ -147,9 +147,44 @@ impl<'a> DistWorker<'a> {
             // so, here we check if there's an alternative binary and copy them into the folder
             // if exists.
             let alt_bin_name = self.dest_binary_name(noweb, !self.is_cli);
-            let possible_alt_bin = dist_dir(self.dist_target)?.join(&alt_bin_name);
-            if possible_alt_bin.is_file() {
-                copy_file(&possible_alt_bin, dest_dir.join(&alt_bin_name))?;
+            
+            // First, check if the alternative binary exists in the offline package directory
+            // (in case it was already built by another worker)
+            let possible_alt_bin_in_pkg = dest_dir.join(&alt_bin_name);
+            if !possible_alt_bin_in_pkg.is_file() {
+                // Check if it exists in another offline package directory
+                // (this can happen when building Both mode, CLI offline package was built first)
+                let alt_worker = DistWorker::new_(
+                    self.toolkit,
+                    self.build_target,
+                    !self.is_cli,
+                    self.edition,
+                    self.dist_target,
+                );
+                let alt_pkg_dir = dist_dir(self.dist_target)?.join(alt_worker.release_name());
+                let possible_alt_bin_in_alt_pkg = alt_pkg_dir.join(&alt_bin_name);
+                if possible_alt_bin_in_alt_pkg.is_file() {
+                    copy_file(&possible_alt_bin_in_alt_pkg, dest_dir.join(&alt_bin_name))?;
+                } else {
+                    // Check if it exists in the dist root (from net installer build)
+                    let possible_alt_bin_net = dist_dir(self.dist_target)?.join(self.dest_binary_name(false, !self.is_cli));
+                    if possible_alt_bin_net.is_file() {
+                        // Copy from net installer location and rename to offline package name
+                        copy_file(&possible_alt_bin_net, dest_dir.join(&alt_bin_name))?;
+                    } else {
+                        // Last resort: check if the source binary exists in release directory
+                        // and copy it directly (this handles the case where net installer wasn't built)
+                        let alt_source_bin_name = if !self.is_cli {
+                            format!("rim-cli{EXE_SUFFIX}")
+                        } else {
+                            format!("rim-gui{EXE_SUFFIX}")
+                        };
+                        let alt_source_bin = release_dir(self.build_target).join(&alt_source_bin_name);
+                        if alt_source_bin.is_file() {
+                            copy_file(&alt_source_bin, dest_dir.join(&alt_bin_name))?;
+                        }
+                    }
+                }
             }
         }
 
