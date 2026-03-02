@@ -30,16 +30,18 @@ pub fn read_persisted_env_str(key: &str) -> Option<String> {
 
 /// Backup the user's current rustup-related env vars to rim_config_dir
 /// before we overwrite them. Reads from Windows registry.
+/// Empty values are skipped (user had no Rust config).
 pub fn backup_before_overwrite(install_dir: &Path) {
     let mut entries = Vec::new();
     for key in ALL_VARS {
         let Some(value) = read_persisted_env_str(key) else {
             continue;
         };
-        if !should_backup_value(key, &value, install_dir) {
-            continue;
-        }
-        if value.contains('"') || value.contains('\n') {
+        if value.is_empty()
+            || !should_backup_value(key, &value, install_dir)
+            || value.contains('"')
+            || value.contains('\n')
+        {
             continue;
         }
         entries.push(format!("{key} = \"{value}\""));

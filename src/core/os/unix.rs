@@ -16,8 +16,16 @@ impl<T> EnvConfig for InstallConfiguration<'_, T> {
     // to invoke `$CARGO_HOME/env.{sh|fish}`. Sadly we'll have to re-implement a similar procedure here,
     // because we need to support additional env vars such as `RUSTUP_DIST_SERVER`, also paths
     // for third-party tools.
+    //
+    // Flow: 1) backup current values (process + rc files), 2) remove conflicting exports from rc,
+    // 3) add source so rim's env takes effect. On uninstall: remove source, restore from backup.
     fn config_env_vars(&self) -> Result<()> {
-        env_backup_unix::backup_before_overwrite(&self.install_dir);
+        let rc_files: Vec<PathBuf> = shell::get_available_shells()
+            .flat_map(|sh| sh.update_rcs().into_iter())
+            .collect::<IndexSet<_>>()
+            .into_iter()
+            .collect();
+        env_backup_unix::backup_before_overwrite(&self.install_dir, &rc_files);
 
         let vars_raw = self.env_vars()?;
 
@@ -38,7 +46,7 @@ impl<T> EnvConfig for InstallConfiguration<'_, T> {
             }
             utils::write_file(&script_path, &env_content, false)?;
 
-            // secondly, insert a source command to rc files if needed
+            // secondly, remove conflicting exports and insert source command to rc files if needed
             if GlobalOpts::get().no_modify_env() {
                 info!("{}", t!("skip_env_modification"));
             } else {
@@ -106,25 +114,37 @@ impl<T> Uninstallation for UninstallConfiguration<T> {
         }
 
         // 2. Restore backed-up env vars to rc files (same approach as Windows)
+        //    Always remove any existing exports for our vars first (cleans stray entries).
+        //    If backup empty (user had no Rust before install): leave clean, no restore.
+        //    If backup non-empty: add restored values + PATH when CARGO_HOME restored.
         let backup = env_backup::load();
-        if backup.is_empty() {
-            return Ok(());
-        }
 
         for sh in shell::get_available_shells() {
-            for key in ALL_VARS {
-                let Some(value) = backup.get(*key) else {
-                    continue;
-                };
-                let line = sh.export_string(key, value);
-                for rc in sh.update_rcs().iter().filter(|f| f.is_file()) {
-                    let mut content = utils::read_to_string("rc file", rc).unwrap_or_default();
+            for rc in sh.update_rcs().iter().filter(|f| f.is_file()) {
+                let mut content = utils::read_to_string("rc file", rc).unwrap_or_default();
+                let mut changed = remove_existing_env_exports(&mut content);
+                for key in ALL_VARS {
+                    let Some(value) = backup.get(*key) else {
+                        continue;
+                    };
+                    let line = sh.export_string(key, value);
                     if update_content(&mut content, &line, false) {
-                        if let Err(e) = utils::write_file(rc, &content, false) {
-                            warn!("Failed to restore {key} to rc: {e}");
-                        } else {
-                            info!("Restored {key} to '{value}' in {}", rc.display());
+                        changed = true;
+                        info!("Restored {key} to '{value}' in {}", rc.display());
+                    }
+                    // When restoring CARGO_HOME, also add PATH so cargo/rustup remain in PATH
+                    if *key == crate::core::CARGO_HOME {
+                        let cargo_bin = format!("{}/bin", value);
+                        let path_line = sh.path_prepend_string(&cargo_bin);
+                        if update_content(&mut content, &path_line, false) {
+                            changed = true;
+                            info!("Restored PATH with {cargo_bin} in {}", rc.display());
                         }
+                    }
+                }
+                if changed {
+                    if let Err(e) = utils::write_file(rc, &content, false) {
+                        warn!("Failed to write rc after restore: {e}");
                     }
                 }
             }
@@ -227,7 +247,42 @@ fn modify_path<T: RimDir + Copy>(config: T, path: &Path, remove: bool) -> Result
     Ok(())
 }
 
+/// Remove existing export/set lines for RUSTUP_*/CARGO_HOME so rim's sourced env takes effect.
+/// Handles both posix (`export KEY=`) and Fish (`set -Ux KEY `) formats.
+/// Returns whether any lines were removed.
+fn remove_existing_env_exports(content: &mut String) -> bool {
+    let original = std::mem::take(content);
+    let filtered: Vec<_> = original
+        .lines()
+        .filter(|line| {
+            let line = line.trim();
+            if line.starts_with("export ") {
+                let rest = line.strip_prefix("export ").unwrap_or(line);
+                for key in ALL_VARS {
+                    if rest.starts_with(&format!("{key}=")) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            if line.starts_with("set -Ux ") {
+                let rest = line.strip_prefix("set -Ux ").unwrap_or(line);
+                for key in ALL_VARS {
+                    if rest.starts_with(&format!("{key} ")) {
+                        return false;
+                    }
+                }
+            }
+            true
+        })
+        .collect();
+    let changed = filtered.len() < original.lines().count();
+    *content = filtered.join("\n").trim_end().to_string();
+    changed
+}
+
 /// Ensure the given rc files contain a command that sourcing our env script.
+/// Before adding source: remove existing RUSTUP_*/CARGO exports so rim's env takes effect.
 fn ensure_env_config_in_rcs<'a, I, T>(config: T, sh: &shell::Shell, rc_files: I) -> Result<()>
 where
     I: Iterator<Item = &'a PathBuf>,
@@ -238,6 +293,7 @@ where
     for rc in rc_files {
         let mut rc_content = utils::read_to_string("rc", rc).unwrap_or_default();
         remove_legacy_config_section(&mut rc_content);
+        remove_existing_env_exports(&mut rc_content);
         if update_content(&mut rc_content, &source_cmd, false) {
             utils::write_file(rc, &rc_content, false).with_context(|| {
                 format!(
@@ -343,6 +399,11 @@ mod shell {
             // NOTE: each shell template file has a function `add_to_path` pre-defined,
             // make sure the name matches in the below line, otherwise the source cmd will fail.
             format!("add_to_path \"{path_to_add}\"")
+        }
+
+        /// Return the string to prepend a path to PATH (used when restoring CARGO_HOME on uninstall).
+        fn path_prepend_string(&self, path_to_prepend: &str) -> String {
+            format!("export PATH=\"{path_to_prepend}:$PATH\"")
         }
 
         fn env_script(&self) -> ShellScript {
@@ -471,6 +532,10 @@ mod shell {
             format!("set -Ux {key} \"{val}\"")
         }
 
+        fn path_prepend_string(&self, path_to_prepend: &str) -> String {
+            format!("set -Ux PATH \"{path_to_prepend}\" $PATH")
+        }
+
         fn update_rcs(&self) -> Vec<PathBuf> {
             // The first rcfile takes precedence.
             match self.rcfiles().into_iter().next() {
@@ -482,7 +547,7 @@ mod shell {
         fn env_script(&self) -> ShellScript {
             ShellScript {
                 name: "env.fish",
-                content: "../../../resources/templates/env.fish",
+                content: include_str!("../../../resources/templates/env.fish"),
             }
         }
     }
@@ -548,6 +613,27 @@ add_to_path "/path/to/foo""#
             r#"
 add_to_path "/path/to/bin""#
         );
+    }
+
+    #[test]
+    fn test_remove_existing_env_exports() {
+        // Posix export lines removed
+        let mut content = r#"export FOO="1"
+export CARGO_HOME="/path/to/cargo"
+export RUSTUP_HOME="/path/to/rustup"
+export BAR="2""#
+            .to_string();
+        remove_existing_env_exports(&mut content);
+        assert_eq!(content, r#"export FOO="1"
+export BAR="2""#);
+
+        // Fish set -Ux lines removed
+        let mut fish_content = r#"set -Ux CARGO_HOME "/path/to/cargo"
+set -Ux RUSTUP_DIST_SERVER "https://example.com"
+set -Ux FOO "1""#
+            .to_string();
+        remove_existing_env_exports(&mut fish_content);
+        assert_eq!(fish_content, "set -Ux FOO \"1\"");
     }
 
     #[test]
