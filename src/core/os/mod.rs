@@ -4,6 +4,8 @@
 //! 1. [`EnvConfig`](crate::core::install::EnvConfig)
 //! 2. [`UninstallConfiguration`](crate::core::uninstall::UninstallConfiguration)
 
+pub(crate) mod env_backup;
+
 #[cfg(unix)]
 pub(crate) mod unix;
 #[cfg(windows)]

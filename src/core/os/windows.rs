@@ -1,8 +1,10 @@
 use std::env::current_exe;
-
+use std::os::windows::ffi::OsStrExt;
 use crate::core::directories::RimDir;
 use crate::core::install::{EnvConfig, InstallConfiguration};
 use crate::core::uninstall::{UninstallConfiguration, Uninstallation};
+use crate::core::{CARGO_HOME, RUSTUP_HOME};
+use crate::core::os::env_backup::{self, windows as env_backup_win};
 use crate::core::GlobalOpts;
 use anyhow::Result;
 use rim_common::utils;
@@ -11,6 +13,8 @@ pub(crate) use rustup::*;
 
 impl<T> EnvConfig for InstallConfiguration<'_, T> {
     fn config_env_vars(&self) -> Result<()> {
+        env_backup_win::backup_before_overwrite(&self.install_dir);
+
         info!("{}", t!("install_env_config"));
 
         for (key, val) in self.env_vars()? {
@@ -23,12 +27,53 @@ impl<T> EnvConfig for InstallConfiguration<'_, T> {
 
 impl<T> Uninstallation for UninstallConfiguration<T> {
     fn remove_rustup_env_vars(&self) -> Result<()> {
-        // Remove the `<InstallDir>/.cargo/bin` which is added by rustup
         let cargo_bin_dir = self.cargo_home().join("bin");
         remove_from_path(&cargo_bin_dir)?;
 
-        for var_to_remove in crate::core::ALL_VARS {
-            unset_env_var(var_to_remove)?;
+        let backup = env_backup::load();
+        let (orig_rustup, orig_cargo) =
+            env_backup_win::find_pre_existing_rust_paths(&self.install_dir, &backup);
+
+        match (&orig_rustup, &orig_cargo) {
+            (Some(rh), Some(ch)) => {
+                info!("Restoring RUSTUP_HOME to '{}', CARGO_HOME to '{}'",
+                      rh.display(), ch.display());
+                set_env_var(RUSTUP_HOME, rh.as_os_str().encode_wide().collect())?;
+                set_env_var(CARGO_HOME, ch.as_os_str().encode_wide().collect())?;
+
+                let cargo_bin = ch.join("bin");
+                if cargo_bin.is_dir() {
+                    add_to_path(&cargo_bin)?;
+                }
+            }
+            _ => {
+                if let Some(rh) = &orig_rustup {
+                    set_env_var(RUSTUP_HOME, rh.as_os_str().encode_wide().collect())?;
+                } else {
+                    unset_env_var(RUSTUP_HOME)?;
+                }
+                if let Some(ch) = &orig_cargo {
+                    set_env_var(CARGO_HOME, ch.as_os_str().encode_wide().collect())?;
+                    let cargo_bin = ch.join("bin");
+                    if cargo_bin.is_dir() {
+                        add_to_path(&cargo_bin)?;
+                    }
+                } else {
+                    unset_env_var(CARGO_HOME)?;
+                }
+            }
+        }
+
+        for key in crate::core::ALL_VARS {
+            if env_backup::is_path_var(key) {
+                continue;
+            }
+            if let Some(ref value) = backup.get(*key) {
+                info!("Restoring {key} to '{value}'");
+                set_env_var(key, value.encode_utf16().collect())?;
+            } else {
+                unset_env_var(key)?;
+            }
         }
 
         update_env();

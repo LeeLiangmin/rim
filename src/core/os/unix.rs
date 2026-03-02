@@ -1,7 +1,9 @@
 use crate::core::directories::RimDir;
 use crate::core::install::{EnvConfig, InstallConfiguration};
 use crate::core::uninstall::{UninstallConfiguration, Uninstallation};
+use crate::core::os::env_backup::{self, unix as env_backup_unix};
 use crate::core::GlobalOpts;
+use crate::core::ALL_VARS;
 use anyhow::{Context, Result};
 use indexmap::IndexSet;
 use rim_common::utils;
@@ -15,6 +17,8 @@ impl<T> EnvConfig for InstallConfiguration<'_, T> {
     // because we need to support additional env vars such as `RUSTUP_DIST_SERVER`, also paths
     // for third-party tools.
     fn config_env_vars(&self) -> Result<()> {
+        env_backup_unix::backup_before_overwrite(&self.install_dir);
+
         let vars_raw = self.env_vars()?;
 
         info!("{}", t!("install_env_config"));
@@ -81,13 +85,14 @@ fn create_rc_backup(rc_files: &[PathBuf], backup_dir: &Path) -> Result<()> {
 }
 
 impl<T> Uninstallation for UninstallConfiguration<T> {
-    // This is basically removing the env script source command in shell profiles.
+    /// Remove our env script source and restore user's pre-existing env vars from backup.
     fn remove_rustup_env_vars(&self) -> Result<()> {
         if GlobalOpts::get().no_modify_env() {
             info!("{}", t!("skip_env_modification"));
             return Ok(());
         }
 
+        // 1. Remove our source command from rc files
         for sh in shell::get_available_shells() {
             let env_script_path = self.install_dir.join(sh.env_script().name);
             let source_command = sh.source_string(utils::path_to_str(&env_script_path)?);
@@ -96,6 +101,31 @@ impl<T> Uninstallation for UninstallConfiguration<T> {
                 remove_legacy_config_section(&mut content);
                 if update_content(&mut content, &source_command, true) {
                     utils::write_file(rc, &content, false)?;
+                }
+            }
+        }
+
+        // 2. Restore backed-up env vars to rc files (same approach as Windows)
+        let backup = env_backup::load();
+        if backup.is_empty() {
+            return Ok(());
+        }
+
+        for sh in shell::get_available_shells() {
+            for key in ALL_VARS {
+                let Some(value) = backup.get(*key) else {
+                    continue;
+                };
+                let line = sh.export_string(key, value);
+                for rc in sh.update_rcs().iter().filter(|f| f.is_file()) {
+                    let mut content = utils::read_to_string("rc file", rc).unwrap_or_default();
+                    if update_content(&mut content, &line, false) {
+                        if let Err(e) = utils::write_file(rc, &content, false) {
+                            warn!("Failed to restore {key} to rc: {e}");
+                        } else {
+                            info!("Restored {key} to '{value}' in {}", rc.display());
+                        }
+                    }
                 }
             }
         }

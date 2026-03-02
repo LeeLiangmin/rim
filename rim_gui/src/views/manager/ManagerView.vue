@@ -128,24 +128,28 @@ onMounted(async () => {
         <!-- Error state: show error message and retry button -->
         <base-card v-if="kitsLoadError" class="error-card" ml="1rem" mr="1.2rem" flex="~ col" gap="1rem">
           <div flex="~ col" gap="0.5rem">
-            <span class="error-title">{{ $t('failed_to_load_toolkits') || 'Failed to load available toolkits' }}</span>
+            <span class="error-title">{{ $t('failed_to_load_toolkits') }}</span>
             <span class="error-message" c-regular>{{ kitsLoadError }}</span>
+            <span class="error-hint" c-regular>{{ $t('failed_to_load_toolkits_hint') }}</span>
           </div>
-          <div flex="~ gap-1rem">
+          <div flex="~ gap-1rem" items-center>
             <base-button theme="primary" @click="retryLoadKits" :disabled="isLoadingKits">
-              {{ isLoadingKits ? ($t('loading') || 'Loading...') : ($t('retry') || 'Retry') }}
+              {{ isLoadingKits ? $t('loading') : $t('retry') }}
             </base-button>
+            <spinner v-if="isLoadingKits" size="18px" color="blue" />
           </div>
         </base-card>
         
         <!-- Loading state -->
-        <base-card v-else-if="isLoadingKits && availableKits.length === 0" class="loading-card" ml="1rem" mr="1.2rem" text="center">
-          <p text="regular">{{ $t('loading_toolkits') || 'Loading available toolkits...' }}</p>
+        <base-card v-else-if="isLoadingKits && availableKits.length === 0" class="loading-card" ml="1rem" mr="1.2rem" flex="~ col" gap="1rem">
+          <base-progress w="full" kind="spinner" />
+          <p text="regular">{{ $t('loading_toolkits') }}</p>
+          <p text="regular" class="loading-hint">{{ $t('loading_toolkits_network_hint') }}</p>
         </base-card>
         
         <!-- Empty state -->
         <base-card v-else-if="!isLoadingKits && availableKits.length === 0" class="empty-card" ml="1rem" mr="1.2rem" text="center">
-          <p text="regular">{{ $t('no_available_toolkits') || 'No available toolkits' }}</p>
+          <p text="regular">{{ $t('no_available_toolkits') }}</p>
         </base-card>
         
         <!-- Success state: show toolkits -->
@@ -170,7 +174,7 @@ onMounted(async () => {
                 :disabled="isInstallingToolkit(toolkit.manifestURL)"
                 @click.stop="install(toolkit.manifestURL)"
                 mt="0.5rem">
-                {{ isInstallingToolkit(toolkit.manifestURL) ? ($t('retrying') || 'Retrying...') : ($t('retry') || 'Retry') }}
+                {{ isInstallingToolkit(toolkit.manifestURL) ? $t('retrying') : $t('retry') }}
               </base-button>
             </div>
           </div>
@@ -181,7 +185,7 @@ onMounted(async () => {
               theme="primary" 
               :disabled="isInstallingToolkit(toolkit.manifestURL)"
               @click="install(toolkit.manifestURL)">
-              {{ isInstallingToolkit(toolkit.manifestURL) ? ($t('installing') || 'Installing...') : $t('install') }}
+              {{ isInstallingToolkit(toolkit.manifestURL) ? $t('installing') : $t('install') }}
             </base-button>
             <div v-else flex="~ col" gap="0.5rem">
               <base-button 
@@ -189,7 +193,7 @@ onMounted(async () => {
                 theme="primary" 
                 :disabled="isInstallingToolkit(toolkit.manifestURL)"
                 @click="install(toolkit.manifestURL)">
-                {{ isInstallingToolkit(toolkit.manifestURL) ? ($t('retrying') || 'Retrying...') : ($t('retry') || 'Retry') }}
+                {{ isInstallingToolkit(toolkit.manifestURL) ? $t('retrying') : $t('retry') }}
               </base-button>
             </div>
           </div>
@@ -333,6 +337,16 @@ onMounted(async () => {
 .empty-card {
   padding: 2rem;
   text-align: center;
+}
+
+.loading-hint {
+  font-size: clamp(11px, 1.6vh, 14px);
+  opacity: 0.75;
+}
+
+.error-hint {
+  font-size: clamp(11px, 1.6vh, 14px);
+  opacity: 0.85;
 }
 
 .install-error {

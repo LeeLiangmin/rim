@@ -11,7 +11,6 @@ use crate::command::with_shared_commands;
 use crate::common::{self, expected_manifest, BaseConfiguration, TOOLKIT_MANIFEST};
 use crate::error::Result;
 use rim::components::Component;
-use rim::try_it;
 use rim::{get_toolkit_manifest, ToolkitManifestExt};
 use rim_common::types::{ToolInfo, ToolSource, ToolkitManifest};
 use rim_common::utils;
@@ -192,34 +191,44 @@ fn is_linux() -> bool {
 }
 
 #[tauri::command]
-fn post_installation_opts(
+async fn post_installation_opts(
     app: AppHandle,
     install_dir: String,
     open: bool,
     shortcut: bool,
 ) -> Result<()> {
     let install_dir = PathBuf::from(install_dir);
-    if shortcut {
-        utils::ApplicationShortcut {
-            name: utils::build_cfg_locale("app_name"),
-            path: install_dir.join(exe!(build_config().app_name())),
-            icon: Some(install_dir.join(format!("{}.ico", build_config().app_name()))),
-            comment: Some(env!("CARGO_PKG_DESCRIPTION")),
-            startup_notify: true,
-            startup_wm_class: Some(env!("CARGO_PKG_NAME")),
-            categories: &["Development"],
-            keywords: &["rust", "rim", "xuanwu"],
-            ..Default::default()
-        }
-        .create()?;
-    }
-
     std::env::set_var("MODE", "manager");
-    if open {
-        // In GUI mode, always open editor when requested
-        try_it(Some(&install_dir), true)?;
-    } else {
-        app.exit(0);
-    }
+
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if shortcut {
+            let sc = utils::ApplicationShortcut {
+                name: utils::build_cfg_locale("app_name"),
+                path: install_dir.join(exe!(build_config().app_name())),
+                icon: Some(install_dir.join(format!("{}.ico", build_config().app_name()))),
+                comment: Some(env!("CARGO_PKG_DESCRIPTION")),
+                startup_notify: true,
+                startup_wm_class: Some(env!("CARGO_PKG_NAME")),
+                categories: &["Development"],
+                keywords: &["rust", "rim", "xuanwu"],
+                ..Default::default()
+            };
+            if let Err(e) = sc.create() {
+                warn!("Failed to create shortcut: {e}");
+            }
+        }
+
+        if open {
+            if let Err(e) = rim::try_it(Some(&install_dir), true) {
+                warn!("Failed to open project: {e}");
+            }
+        } else {
+            let _ = app_clone.exit(0);
+        }
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("background task join error: {e}"))?;
+
     Ok(())
 }

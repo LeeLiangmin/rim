@@ -14,10 +14,14 @@ use crate::core::{tools::Tool, GlobalOpts};
 
 /// Contains definition of uninstallation steps.
 pub(crate) trait Uninstallation {
-    /// Remove persistent environment variables for `rustup`.
+    /// Clean up persistent environment variables set by rim.
     ///
-    /// This will remove persistent environment variables including
-    /// `RUSTUP_DIST_SERVER`, `RUSTUP_UPDATE_ROOT`, `CARGO_HOME`, `RUSTUP_HOME`.
+    /// On Windows: restores `CARGO_HOME`, `RUSTUP_HOME`, `RUSTUP_DIST_SERVER`,
+    /// and `RUSTUP_UPDATE_ROOT` to the user's pre-existing values (from backup
+    /// saved before install, or from registry / default paths). Also restores
+    /// `~/.cargo/bin` in PATH.
+    ///
+    /// On Unix: removes the env script source commands from shell rc files.
     fn remove_rustup_env_vars(&self) -> Result<()>;
     /// The last step of uninstallation, this will remove the binary itself, along with
     /// the folder it's in.
