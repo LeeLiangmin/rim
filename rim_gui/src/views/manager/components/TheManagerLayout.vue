@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeMount, onMounted, provide, ref, watch } from 'vue';
+import { computed, onMounted, provide, ref, watch } from 'vue';
 import { getAppNameWithVersion, managerConf } from '@/utils';
 import { useCustomRouter } from '@/router';
 import { useI18n } from 'vue-i18n';
@@ -25,7 +25,7 @@ async function refreshLabels() {
 }
 
 const loadError = ref<string | undefined>(undefined);
-const isLoadingKits = ref(false);
+const isLoadingKits = ref(true);
 
 async function loadManagerData() {
   isLoadingKits.value = true;
@@ -47,11 +47,9 @@ provide('kitsLoadError', loadError);
 provide('isLoadingKits', isLoadingKits);
 provide('retryLoadKits', loadManagerData);
 
-onBeforeMount(async () => {
-  await loadManagerData();
-});
-
 onMounted(async () => {
+  loadManagerData();
+
   await refreshLabels();
 
   event.listen('manager:update-available', (event) => {

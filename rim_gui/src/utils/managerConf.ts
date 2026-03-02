@@ -159,15 +159,11 @@ class ManagerConf {
 
   async load(): Promise<{ kitsLoaded: boolean; kitsError?: string }> {
     const result = await this.reloadKits();
-    // since this function is called immediately after app start, we call these functions
-    // to check updates in background then ask user if they what to install it.
-    // Use silent mode to avoid showing error dialog if update check fails
-    try {
-      await invokeCommand('check_updates_on_startup', {}, { silent: true });
-    } catch (error) {
-      // Silently ignore update check failures, they're not critical
+    // Fire-and-forget: check updates in background, don't block UI.
+    // User will be notified via event when update is available.
+    invokeCommand('check_updates_on_startup', {}, { silent: true }).catch((error) => {
       console.warn('Update check failed:', error);
-    }
+    });
     return result;
   }
 
@@ -206,13 +202,16 @@ class ManagerConf {
   }
 
   async reloadKits(): Promise<{ kitsLoaded: boolean; kitsError?: string; installedLoaded: boolean; installedError?: string }> {
-    const installedResult = await this.loadInstalledKit();
-    const kitsResult = await this.loadAvailableKits();
-    return { 
-      kitsLoaded: kitsResult.success, 
+    const [installedResult, kitsResult] = await Promise.all([
+      this.loadInstalledKit(),
+      this.loadAvailableKits(),
+    ]);
+
+    return {
+      kitsLoaded: kitsResult.success,
       kitsError: kitsResult.error,
       installedLoaded: installedResult.success,
-      installedError: installedResult.error
+      installedError: installedResult.error,
     };
   }
 }
