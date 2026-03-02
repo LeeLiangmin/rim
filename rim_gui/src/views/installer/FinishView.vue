@@ -41,14 +41,14 @@ async function closeWindow() {
           <div c="darker-secondary" font="bold" text="4vh">{{ $t('install_finish_info') }}</div>
           <div v-if="!isLinux" c="secondary" text="3vh">{{ $t('post_installation_hint') }}</div>
         </div>
-        <div v-if="!isLinux" flex="~ col" gap="4vh">
+        <div v-if="!isLinux" flex="~ col" gap="4vh" :class="{ 'loading-dimmed': isLoading }">
           <base-check-box v-model="runApp" :title="$t('post_installation_open')" @titleClick="runApp = !runApp" />
           <base-check-box v-model="createShortcut" :title="$t('post_installation_create_shortcut')" @titleClick="createShortcut = !createShortcut" />
         </div>
-        <base-button theme="primary" w="20vw" :class="{ 'finish-btn': !isLinux, 'finish-btn-linux': isLinux }" @click="closeWindow()" :disabled="isLoading">
-          <div flex="~ items-center justify-center" gap="2">
+        <base-button theme="primary" w="20vw" :class="['finish-btn-anchor', { 'finish-btn': !isLinux, 'finish-btn-linux': isLinux }]" @click="closeWindow()" :disabled="isLoading">
+          <div flex="~ items-center justify-center" gap="2" class="btn-content">
             <Spinner v-if="isLoading" size="16px" color="white" />
-            <span>{{ $t('finish') }}</span>
+            <span>{{ isLoading ? $t('post_installation_processing') : $t('finish') }}</span>
           </div>
         </base-button>
       </div>
@@ -73,6 +73,10 @@ async function closeWindow() {
   bottom: 10%;
 }
 
+.finish-btn-anchor {
+  min-width: 160px;
+}
+
 .finish-btn {
   position: fixed;
   bottom: 5vh;
@@ -85,5 +89,11 @@ async function closeWindow() {
 
 .linux-layout {
   justify-content: center;
+}
+
+.loading-dimmed {
+  opacity: 0.6;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 </style>

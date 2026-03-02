@@ -161,6 +161,7 @@
   "post_installation_create_shortcut": "创建桌面快捷方式",
   "post_installation_hint": "您可以选择以下任意选项，然后点击「完成」退出安装程序。",
   "post_installation_open": "完成后打开",
+  "post_installation_processing": "正在处理，请稍候…",
   "pre_update_confirmation": "\n即将更新以下组件, 您可以选择更新它们, 或输入 '2' 来手动选择要更新的组件\n\n%{list}",
   "pre_update_note": "即将升级套件版本至 '%{target_version}' (当前 '%{current_version}')，此举将会覆盖您当前已安装的工具套件。",
   "program_does_not_exits": "无法运行指定命令，应用程序 '%{program}' 不在 PATH 变量中",

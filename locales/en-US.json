@@ -161,6 +161,7 @@
   "post_installation_create_shortcut": "Create desktop shortcut",
   "post_installation_hint": "You may select any options below before clicking 'Finish' to exit the installer.",
   "post_installation_open": "Open after finished",
+  "post_installation_processing": "Processing, please wait…",
   "pre_update_confirmation": "\nThese components below will be updated, you may choose to install them, or manually select another set by entering '2'\n\n%{list}",
   "pre_update_note": "updating toolkit version to '%{target_version}' (currently '%{current_version}'), this will replace your current toolkit after installation.",
   "program_does_not_exits": "unable to execute command because the program '%{program}' does not exist in the PATH variable",
