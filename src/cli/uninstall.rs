@@ -22,10 +22,7 @@ pub(super) fn execute(subcommand: &ManagerSubcommands) -> Result<ExecStatus> {
         if installed.trim().is_empty() {
             t!("uninstall_confirmation", name = app_name).into()
         } else {
-            format!(
-                "{}\n\n{installed}\n",
-                t!("uninstall_all_confirmation", app = app_name)
-            )
+            t!("uninstall_all_confirmation", app = app_name, list = installed).into()
         }
     } else {
         let toolkit_name = config
