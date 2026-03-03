@@ -49,11 +49,13 @@ async function selectNav(index: number) {
   await updateUnderline();
 }
 
-async function updateDots() {
-  if (!managerMode) return;
+const resizeHandler = () => updateUnderline();
+let unlistenDots: (() => void) | null = null;
 
-  event.listen('toolkit:update-available', (event) => {
-    console.log('toolkit update available: ', event.payload);
+async function updateDots() {
+  if (!managerMode.value) return;
+
+  unlistenDots = await event.listen('toolkit:update-available', () => {
     navItems.value[0].showDot.value = true;
   });
 }
@@ -63,17 +65,14 @@ onMounted(async () => {
   managerMode.value = appInfo.is_manager;
 
   updateUnderline();
-  updateDots();
+  await updateDots();
 
-  window.addEventListener('resize', () => {
-    updateUnderline();
-  });
+  window.addEventListener('resize', resizeHandler);
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', () => {
-    updateUnderline();
-  });
+  window.removeEventListener('resize', resizeHandler);
+  unlistenDots?.();
 });
 
 const handleClick = () => {

@@ -22,4 +22,4 @@ resources/templates/channel-rust
 ci/scripts/cache
 
 .local 
-install 
+/install
