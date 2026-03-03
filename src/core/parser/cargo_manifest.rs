@@ -1,7 +1,7 @@
 //! Module for parsing the cargo manifest (Cargo.toml) file.
 //! Mainly used to handle crate installation
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use glob::glob;
 use rim_common::{types::TomlParser, utils};
 use serde::Deserialize;
@@ -22,9 +22,11 @@ impl TomlParser for CargoManifest {
         let mut temp_manifest = Self::from_str(&raw)?;
 
         if let Some(ws) = temp_manifest.workspace.as_mut() {
-            // safe to unwrap, we know it is a file since we have already read its content
-            // and a file should have a parent directory
-            ws.root_dir = path.as_ref().parent().unwrap().to_path_buf();
+            ws.root_dir = path
+                .as_ref()
+                .parent()
+                .context("cargo manifest path has no parent directory")?
+                .to_path_buf();
         }
 
         Ok(temp_manifest)

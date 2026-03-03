@@ -76,8 +76,9 @@ fn create_rc_backup(rc_files: &[PathBuf], backup_dir: &Path) -> Result<()> {
             continue;
         }
 
-        // Safe to unwrap as long as the path is one of the `sh.update_rcs()`
-        let rc_filename = path.file_name().unwrap();
+        let Some(rc_filename) = path.file_name() else {
+            continue;
+        };
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())

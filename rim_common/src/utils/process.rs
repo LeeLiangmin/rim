@@ -163,8 +163,8 @@ fn cmd_to_string(cmd: Command) -> String {
 fn get_ret_code(status: &ExitStatus) -> i32 {
     cfg_if::cfg_if! {
         if #[cfg(windows)] {
-            // status code can only be `None` on Unix
-            status.code().unwrap()
+            // On Windows exit code is always available (None only on Unix signal kill)
+            status.code().expect("exit code unavailable on Windows")
         } else {
             use std::os::unix::process::ExitStatusExt;
             status.into_raw()

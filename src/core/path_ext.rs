@@ -83,8 +83,7 @@ impl PathExt<'_> {
         match self {
             Self::Single(path) => Ok(path),
             Self::MultiOwned(paths) if paths.len() == 1 => {
-                // safe to unwrap, `paths` was proven not empty
-                Ok(paths.iter().map(|pb| pb.as_path()).next().unwrap())
+                Ok(paths.first().expect("len()==1 but empty").as_path())
             }
             _ => bail!("expecting single `Path` type, got '{self:?}' instead."),
         }

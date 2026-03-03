@@ -306,9 +306,9 @@ impl ToolchainInstaller {
                 .clone();
             if server.scheme() == "https" && self.insecure {
                 warn!("{}", tl!("insecure_http_override"));
-                // the old scheme is `https` and new scheme is `http`, meaning that this
-                // is guaranteed to be `Ok`.
-                server.set_scheme("http").unwrap();
+                server
+                    .set_scheme("http")
+                    .map_err(|_| anyhow::anyhow!("failed to downgrade URL scheme to http"))?;
             }
             std::env::set_var(RUSTUP_DIST_SERVER, server.as_str());
         }

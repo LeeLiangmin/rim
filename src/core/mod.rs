@@ -112,6 +112,8 @@ impl GlobalOpts {
             no_modify_path,
         };
 
+        // Poisoned mutex means a thread panicked while holding the lock;
+        // the program state is already compromised, so unwrap is acceptable.
         *GLOBAL_OPTS.lock().unwrap() = Some(opts);
     }
 
@@ -119,6 +121,7 @@ impl GlobalOpts {
     ///
     /// Fallback to default value if is not set.
     pub fn get() -> Self {
+        // See `set` — poisoned mutex is unrecoverable.
         GLOBAL_OPTS.lock().unwrap().unwrap_or_default()
     }
 

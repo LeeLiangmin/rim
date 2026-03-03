@@ -22,7 +22,7 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use url::Url;
 
 use crate::types::{Configuration, Language};
@@ -117,13 +117,9 @@ macro_rules! blocking {
     };
 }
 
-/// Forcefully parsing a `&str` to [`Url`].
-///
-/// # Panic
-///
-/// Causes panic if the given string cannot be parsed as `Url`.
-pub fn force_parse_url(url: &str) -> Url {
-    Url::parse(url).unwrap_or_else(|e| panic!("failed to parse url '{url}': {e}"))
+/// Parse a `&str` into a [`Url`], returning an error with context on failure.
+pub fn parse_url(url: &str) -> Result<Url> {
+    Url::parse(url).with_context(|| format!("failed to parse url '{url}'"))
 }
 
 /// Basically [`Url::join`], but will push a forward slash (`/`) to the root if necessary.
@@ -210,6 +206,8 @@ pub fn set_locale(lang: Language) {
     rust_i18n::set_locale(loc);
 
     // update the current locale
+    // Poisoned mutex means a thread panicked while holding the lock;
+    // the program state is already compromised, so unwrap is acceptable.
     *CURRENT_LOCALE.lock().unwrap() = lang;
     // update persistent locale config, but don't fail the program,
     // because locale setting is not that critical.
@@ -226,6 +224,7 @@ pub fn set_locale(lang: Language) {
 
 /// Get the configured locale string from `configuration.toml`
 pub fn build_cfg_locale(key: &str) -> &str {
+    // See `set_locale` — poisoned mutex is unrecoverable.
     let cur_locale = &*CURRENT_LOCALE.lock().unwrap();
     crate::cfg_locale!(cur_locale.locale_str(), key)
 }

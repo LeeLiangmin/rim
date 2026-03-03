@@ -11,7 +11,9 @@ fn main() -> Result<()> {
 
     if !status.no_pause {
         #[cfg(windows)]
-        rim::cli::pause().expect("unable to pause terminal window");
+        if let Err(e) = rim::cli::pause() {
+            eprintln!("unable to pause terminal window: {e}");
+        }
     }
 
     Ok(())
