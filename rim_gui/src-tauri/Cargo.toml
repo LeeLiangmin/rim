@@ -30,4 +30,5 @@ custom-protocol = ["tauri/custom-protocol"]
 no-web = ["rim/no-web"]
 
 [target."cfg(windows)".dependencies]
-winapi = { version = "0.3", features = ["winuser", "wincon"] }
+winapi = { version = "0.3", features = ["winuser", "wincon", "shlobj", "knownfolders", "combaseapi", "winerror"] }
+winreg = "0.52.0"

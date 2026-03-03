@@ -134,6 +134,8 @@
   "minimal_desc": "Contains only the required components sufficient to run Rust compiler, no other tools such as IDE are included",
   "misc": "Miscellaneous",
   "missing_restricted_source": "package source of tool '%{name}' is restricted, which should be provided by user or has a default value, but none of those are presented",
+  "missing_webview_runtime": "Missing required webview dependency: %{dependency}.",
+  "missing_webview_runtime_hint": "Please install the dependency first, or run the command-line installer '%{cli}' instead.",
   "msvc_installed": "VS BuildTools is successfully installed!",
   "msvc_installed_reboot_required": "VS BuildTools is successfully installed, please reboot your computer after this installation",
   "native": "Native",

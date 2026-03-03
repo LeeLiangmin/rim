@@ -134,6 +134,8 @@
   "minimal_desc": "仅包含运行 Rust 编译器所需的最基础组件，不包含集成开发环境等非必需工具",
   "misc": "其它功能",
   "missing_restricted_source": "工具 '%{name}' 的安装包来源受限制，必须由用户明确提供或应具有默认值，但目前既未提供来源，也未设置默认值。",
+  "missing_webview_runtime": "缺少 WebView 运行依赖：%{dependency}。",
+  "missing_webview_runtime_hint": "请先安装对应依赖，或改用命令行安装程序 '%{cli}' 执行安装。",
   "msvc_installed": "VS BuildTools 已成功安装！",
   "msvc_installed_reboot_required": "VS BuildTools 已成功安装，请在此安装完成后重启计算机",
   "native": "原生",

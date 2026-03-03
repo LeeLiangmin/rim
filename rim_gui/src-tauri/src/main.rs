@@ -10,6 +10,7 @@ mod error;
 mod installer_mode;
 mod manager_mode;
 mod progress;
+mod webview;
 
 use anyhow::Result;
 use rim::{cli::ExecutableCommand, Mode};
@@ -26,10 +27,16 @@ fn main() -> Result<()> {
     match mode {
         Mode::Manager(maybe_args) => {
             run_cli_else_hide_console(&maybe_args)?;
+            if should_start_gui(&maybe_args) {
+                webview::ensure_platform_webview_dependency();
+            }
             manager_mode::main(msg_recv, maybe_args)?;
         }
         Mode::Installer(maybe_args) => {
             run_cli_else_hide_console(&maybe_args)?;
+            if should_start_gui(&maybe_args) {
+                webview::ensure_platform_webview_dependency();
+            }
             installer_mode::main(msg_recv)?;
         }
     }
@@ -75,4 +82,8 @@ fn run_cli_else_hide_console<T: ExecutableCommand>(command_args: &anyhow::Result
     }
 
     Ok(())
+}
+
+fn should_start_gui<T: ExecutableCommand>(command_args: &anyhow::Result<T>) -> bool {
+    command_args.as_ref().map(|args| !args.no_gui()).unwrap_or(true)
 }
