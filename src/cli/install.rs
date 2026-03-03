@@ -125,7 +125,7 @@ fn warn_enforced_download_source(installer: &Installer, manifest: &ToolkitManife
         && manifest.config.cargo_registry.as_ref().map(|r| &r.index)
             != installer.registry_url.as_ref()
     {
-        warn!("{}", t!("enforced_toolkit_config", key = "registry-url"));
+        warn!("{}", tl!("enforced_toolkit_config", key = "registry-url"));
     }
 }
 
@@ -206,7 +206,7 @@ fn read_install_dir_input(default: &str) -> Result<Option<String>> {
     let dir_input = common::question_str(t!("installation_path"), None, default)?;
     // verify path input before proceeding
     if utils::is_root_dir(&dir_input) {
-        warn!("{}", t!("notify_root_dir"));
+        warn!("{}", tl!("notify_root_dir"));
         Ok(None)
     } else {
         Ok(Some(dir_input))

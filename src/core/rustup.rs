@@ -305,7 +305,7 @@ impl ToolchainInstaller {
                 .unwrap_or_else(|| default_rustup_dist_server())
                 .clone();
             if server.scheme() == "https" && self.insecure {
-                warn!("{}", t!("insecure_http_override"));
+                warn!("{}", tl!("insecure_http_override"));
                 // the old scheme is `https` and new scheme is `http`, meaning that this
                 // is guaranteed to be `Ok`.
                 server.set_scheme("http").unwrap();
@@ -354,7 +354,7 @@ async fn download_rustup_init<T: ProgressHandler + Clone + 'static>(
     config: &InstallConfiguration<'_, T>,
     insecure: bool,
 ) -> Result<()> {
-    info!("{}", t!("downloading", file = "rustup-init"));
+    info!("{}", tl!("downloading", file = "rustup-init"));
 
     let download_url = utils::url_join(
         config.rustup_update_root(),

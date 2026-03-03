@@ -126,7 +126,7 @@ pub async fn toolkits_from_server(insecure: bool) -> Result<Vec<Toolkit>> {
 
     // download dist manifest from server
     let dist_m_filename = DistManifest::FILENAME;
-    info!("{} {dist_m_filename}", t!("fetching"));
+    info!("{} {dist_m_filename}", tl!("fetching"));
     let dist_m_url = utils::url_join(&dist_server, format!("dist/{dist_m_filename}"))?;
     let dist_m_file = utils::make_temp_file("dist-manifest-", None)?;
     // this file is very small, no need for progress bar.
@@ -200,7 +200,7 @@ pub async fn latest_installable_toolkit(
         // make sure they are the same **product**
         .find(|tk| tk.edition == installed.edition)
     else {
-        info!("{}", t!("no_available_updates", toolkit = &installed.name));
+        info!("{}", tl!("no_available_updates", toolkit = &installed.name));
         return Ok(None);
     };
     let cur_ver = trim_version(&installed.version);

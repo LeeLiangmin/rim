@@ -29,7 +29,7 @@ impl<T> EnvConfig for InstallConfiguration<'_, T> {
 
         let vars_raw = self.env_vars()?;
 
-        info!("{}", t!("install_env_config"));
+        info!("{}", tl!("install_env_config"));
         for sh in shell::get_available_shells() {
             // first, modify the env script (CARGO_HOME/env)
             let script = sh.env_script();
@@ -48,7 +48,7 @@ impl<T> EnvConfig for InstallConfiguration<'_, T> {
 
             // secondly, remove conflicting exports and insert source command to rc files if needed
             if GlobalOpts::get().no_modify_env() {
-                info!("{}", t!("skip_env_modification"));
+                info!("{}", tl!("skip_env_modification"));
             } else {
                 let rcs = sh.update_rcs();
                 create_rc_backup(&rcs, self.backup_dir())?;
@@ -96,7 +96,7 @@ impl<T> Uninstallation for UninstallConfiguration<T> {
     /// Remove our env script source and restore user's pre-existing env vars from backup.
     fn remove_rustup_env_vars(&self) -> Result<()> {
         if GlobalOpts::get().no_modify_env() {
-            info!("{}", t!("skip_env_modification"));
+            info!("{}", tl!("skip_env_modification"));
             return Ok(());
         }
 

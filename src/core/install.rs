@@ -44,19 +44,19 @@ impl InstallationErrors {
 
     pub(crate) fn add_tool_error(&mut self, tool_name: String, error: anyhow::Error) {
         let error_msg = format!("{error:?}");
-        error!("安装工具 '{}' 失败: {}", tool_name, error_msg);
+        error!("{}", tl!("install_tool_failed", name = tool_name, err = error_msg));
         self.tool_errors.push((tool_name, error_msg));
     }
 
     pub(crate) fn add_rust_error(&mut self, error: anyhow::Error) {
         let error_msg = format!("{error:?}");
-        error!("安装Rust工具链失败: {}", error_msg);
+        error!("{}", tl!("install_toolchain_failed", err = error_msg));
         self.rust_error = Some(error_msg);
     }
 
     pub(crate) fn add_step_error(&mut self, step_name: String, error: anyhow::Error) {
         let error_msg = format!("{error:?}");
-        warn!("步骤 '{}' 失败: {}", step_name, error_msg);
+        warn!("{}", tl!("step_failed", step = step_name, err = error_msg));
         self.step_errors.push((step_name, error_msg));
     }
 
@@ -69,21 +69,21 @@ impl InstallationErrors {
             return;
         }
 
-        error!("安装过程中发生了一些错误:");
+        error!("{}", tl!("install_error_summary"));
         
         if !self.tool_errors.is_empty() {
-            error!("工具安装错误 ({} 个):", self.tool_errors.len());
+            error!("{}", tl!("install_errors_tools", count = self.tool_errors.len()));
             for (name, err) in &self.tool_errors {
                 error!("  - {}: {}", name, err);
             }
         }
 
         if let Some(ref err) = self.rust_error {
-            error!("Rust工具链安装错误: {}", err);
+            error!("{}", tl!("install_errors_rust", err = err));
         }
 
         if !self.step_errors.is_empty() {
-            error!("其他步骤错误 ({} 个):", self.step_errors.len());
+            error!("{}", tl!("install_errors_other_steps", count = self.step_errors.len()));
             for (step, err) in &self.step_errors {
                 error!("  - {}: {}", step, err);
             }
@@ -712,7 +712,7 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
     /// This is suitable for first-time installation.
     pub fn setup(&mut self) -> Result<()> {
         let install_dir = &self.install_dir;
-        info!("{}", t!("install_init", dir = install_dir.display()));
+        info!("{}", tl!("install_init", dir = install_dir.display()));
         utils::ensure_dir(install_dir)?;
 
         // Create a copy of the manifest which is later used for component management.
@@ -799,7 +799,7 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
 
         // 如果有错误，在日志中记录，但不阻止安装流程完成
         if errors.has_errors() {
-            warn!("安装完成，但部分组件安装失败。请查看上面的错误信息。");
+            warn!("{}", tl!("install_finished_with_errors"));
         }
 
         self.progress_handler
@@ -828,7 +828,7 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
 
         // 如果需要 Rust 工具链但工具链未安装，跳过这些工具并记录错误
         if use_rust && !self.toolchain_is_installed && !to_install.is_empty() {
-            warn!("Rust 工具链未安装，跳过需要 Rust 的工具安装");
+            warn!("{}", tl!("skip_tools_no_toolchain"));
             for (name, _) in &to_install {
                 errors.add_tool_error(
                     name.to_string(),
@@ -854,7 +854,7 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
         to_install.reverse();
 
         for (name, tool) in to_install {
-            info!("{}", t!("installing_tool_info", name = name));
+            info!("{}", tl!("installing_tool_info", name = name));
             match self.install_tool(name, tool).await {
                 Ok(()) => {
                     self.inc_progress(sub_progress_delta)?;
@@ -876,19 +876,19 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
     }
 
     pub(crate) async fn install_tools(&mut self, tools: &ToolMap, errors: &mut InstallationErrors) -> Result<()> {
-        info!("{}", t!("install_tools"));
+        info!("{}", tl!("install_tools"));
         self.install_tools_(false, tools, 30, errors).await
     }
 
     /// A step to include `cargo install`, and any tools that requires rust to be installed
     pub(crate) async fn install_tools_late(&mut self, tools: &ToolMap, errors: &mut InstallationErrors) -> Result<()> {
-        info!("{}", t!("install_via_cargo"));
+        info!("{}", tl!("install_via_cargo"));
         self.install_tools_(true, tools, 30, errors).await
     }
 
     /// Install Rust toolchain with a list of components
     pub(crate) async fn install_rust(&mut self, components: &[ToolchainComponent], errors: &mut InstallationErrors) -> Result<()> {
-        info!("{}", t!("install_toolchain"));
+        info!("{}", tl!("install_toolchain"));
 
         let manifest = self.manifest;
 
@@ -1237,7 +1237,7 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
     ///
     /// This will write a `config.toml` file to `CARGO_HOME`.
     pub fn config_cargo(&self) -> Result<()> {
-        info!("{}", t!("install_cargo_config"));
+        info!("{}", tl!("install_cargo_config"));
 
         let mut config = CargoConfig::new();
         let registry = self.cargo_registry();
@@ -1288,7 +1288,7 @@ impl<T: ProgressHandler + Clone + 'static> InstallConfiguration<'_, T> {
 
         // 如果有错误，在日志中记录，但不阻止更新流程完成
         if errors.has_errors() {
-            warn!("更新完成，但部分组件更新失败。请查看上面的错误信息。");
+            warn!("{}", tl!("update_finished_with_errors"));
         }
 
         self.progress_handler
@@ -1297,7 +1297,7 @@ impl<T: ProgressHandler + Clone + 'static> InstallConfiguration<'_, T> {
     }
 
     async fn update_toolchain(&mut self, components: &[ToolchainComponent]) -> Result<()> {
-        info!("{}", t!("update_toolchain"));
+        info!("{}", tl!("update_toolchain"));
 
         ToolchainInstaller::init(&*self)
             .insecure(self.insecure)
@@ -1317,7 +1317,7 @@ impl<T: ProgressHandler + Clone + 'static> InstallConfiguration<'_, T> {
     }
 
     async fn update_tools(&mut self, tools: &ToolMap, errors: &mut InstallationErrors) -> Result<()> {
-        info!("{}", t!("update_tools"));
+        info!("{}", tl!("update_tools"));
         self.install_tools_(false, tools, 15, errors).await?;
         self.install_tools_(true, tools, 15, errors).await?;
         Ok(())
@@ -1334,7 +1334,7 @@ impl<T: ProgressHandler + Clone + 'static> InstallConfiguration<'_, T> {
                 continue;
             };
 
-            info!("{}", t!("removing_obsolete_tool", name = obsolete));
+            info!("{}", tl!("removing_obsolete_tool", name = obsolete));
             tool.uninstall(&*self)?;
             self.install_record.remove_tool_record(obsolete);
         }

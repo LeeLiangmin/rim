@@ -270,7 +270,7 @@ pub fn move_to(src: &Path, dest: &Path, force: bool) -> Result<()> {
         match fs::rename(src, dest) {
             Ok(()) => return Ok(()),
             Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
-                warn!("{}", t!("remove_path_retry", path = src.display()));
+                warn!("{}", crate::tl!("remove_path_retry", path = src.display()));
                 std::thread::sleep(Duration::from_secs(3));
                 continue;
             }
@@ -282,7 +282,7 @@ pub fn move_to(src: &Path, dest: &Path, force: bool) -> Result<()> {
     // And report error if the original path cannot be deleted.
     copy_as(src, dest)?;
     if remove(src).is_err() {
-        warn!("{}", t!("remove_path_fail_warn", path = src.display()));
+        warn!("{}", crate::tl!("remove_path_fail_warn", path = src.display()));
     }
 
     Ok(())

@@ -15,7 +15,7 @@ impl<T> EnvConfig for InstallConfiguration<'_, T> {
     fn config_env_vars(&self) -> Result<()> {
         env_backup_win::backup_before_overwrite(&self.install_dir);
 
-        info!("{}", t!("install_env_config"));
+        info!("{}", tl!("install_env_config"));
 
         for (key, val) in self.env_vars()? {
             set_env_var(key, val.encode_utf16().collect())?;
@@ -101,7 +101,7 @@ impl<T> Uninstallation for UninstallConfiguration<T> {
                     // which should emit warnings on those files already.
                     continue;
                 }
-                warn!("{}", t!("unable_to_remove", path = entry.display()));
+                warn!("{}", tl!("unable_to_remove", path = entry.display()));
             }
         }
 
@@ -110,7 +110,7 @@ impl<T> Uninstallation for UninstallConfiguration<T> {
 
         // remove current exe
         if self_replace::self_delete().is_err() {
-            warn!("{}", t!("unable_to_remove", path = current_exe.display()))
+            warn!("{}", tl!("unable_to_remove", path = current_exe.display()))
         }
         // remove parent dir, which should be very quick to remove.
         // but if for some reason it fails, well it's too late then,
@@ -240,7 +240,7 @@ pub(crate) mod rustup {
                 if let Some(s) = from_winreg_value(&val) {
                     Ok(Some(s))
                 } else {
-                    warn!("{}", t!("windows_not_modify_path_warn"));
+                    warn!("{}", tl!("windows_not_modify_path_warn"));
                     Ok(None)
                 }
             }

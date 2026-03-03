@@ -98,7 +98,7 @@ async fn install_components(
         bail!(t!("invalid_components", list = names));
     }
     if comps_to_install.is_empty() {
-        info!("{}", t!("task_success"));
+        info!("{}", tl!("task_success"));
         return Ok(());
     }
 
@@ -116,15 +116,15 @@ async fn install_components(
     // 为组件安装创建错误收集器
     let mut errors = crate::core::install::InstallationErrors::new();
     if let Err(e) = config.install_tools(&tools, &mut errors).await {
-        errors.add_step_error("安装工具".to_string(), e);
+        errors.add_step_error(tl!("install_tools").to_string(), e);
     }
     errors.report();
     
     if errors.has_errors() {
-        warn!("部分组件安装失败。请查看上面的错误信息。");
+        warn!("{}", tl!("partial_install_failed"));
     }
 
-    info!("{}", t!("task_success"));
+    info!("{}", tl!("task_success"));
 
     // notify user that they might need to source the current shell again
     #[cfg(unix)]
@@ -175,14 +175,14 @@ fn uninstall_components(components: &[String]) -> Result<()> {
         );
     }
     if tc_comps_to_remove.is_empty() && tools_to_remove.is_empty() {
-        info!("{}", t!("task_success"));
+        info!("{}", tl!("task_success"));
         return Ok(());
     }
 
     let mut config = UninstallConfiguration::init(CliProgress::default())?;
     config.remove_toolchain_components(&tc_comps_to_remove, 50)?;
     config.remove_tools(tools_to_remove, 50)?;
-    info!("{}", t!("task_success"));
+    info!("{}", tl!("task_success"));
     Ok(())
 }
 

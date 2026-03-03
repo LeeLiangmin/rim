@@ -72,7 +72,7 @@ macro_rules! warn_enforced_config {
             && $input_config.is_some()
             && $manifest_config != $input_config
         {
-            log::warn!("{}", rust_i18n::t!("enforced_toolkit_config", key = $key));
+            log::warn!("{}", rim_common::tl!("enforced_toolkit_config", key = $key));
         }
     };
 }
@@ -217,7 +217,7 @@ where
                     lower_bound = 1,
                     upper_bound = choices.len()
                 );
-                warn!("{}", t!("invalid_input", actual = s, expect = expected));
+                warn!("{}", tl!("invalid_input", actual = s, expect = expected));
                 false
             }
         },
@@ -264,7 +264,7 @@ where
                         upper_bound = choices.len()
                     )
                 );
-                warn!("{}", t!("invalid_input", actual = s, expect = expected));
+                warn!("{}", tl!("invalid_input", actual = s, expect = expected));
                 false
             }
         },

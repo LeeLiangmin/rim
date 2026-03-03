@@ -17,6 +17,19 @@ pub fn build_config() -> &'static BuildConfig {
     BuildConfig::load()
 }
 
+/// Like `t!()` but always resolves to `en-US`, intended for log messages
+/// that are displayed in the GUI installation detail panel so they stay
+/// in a single language regardless of the user's locale setting.
+#[macro_export]
+macro_rules! tl {
+    ($key:expr) => {
+        t!($key, locale = "en-US")
+    };
+    ($key:expr, $($rest:tt)*) => {
+        t!($key, locale = "en-US", $($rest)*)
+    };
+}
+
 #[macro_export]
 macro_rules! cfg_locale {
     ($lang:expr, $key:expr) => {

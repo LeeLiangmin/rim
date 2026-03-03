@@ -54,7 +54,7 @@ async fn update_toolkit_(
     rustup_dist_server: &Option<Url>,
 ) -> Result<()> {
     let Some(installed) = Toolkit::installed(false).await? else {
-        info!("{}", t!("no_toolkit_installed"));
+        info!("{}", tl!("no_toolkit_installed"));
         return Ok(());
     };
     let installed = &*installed.lock().await;

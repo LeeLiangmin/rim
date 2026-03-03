@@ -85,7 +85,7 @@ impl DownloadOpt {
         }
 
         if self.insecure {
-            warn!("{}", t!("insecure_download"));
+            warn!("{}", crate::tl!("insecure_download"));
         }
 
         let resp = self
@@ -140,7 +140,7 @@ impl DownloadOpt {
         }
 
         if self.insecure {
-            warn!("{}", t!("insecure_download"));
+            warn!("{}", crate::tl!("insecure_download"));
         }
 
         let helper = DownloadHelper::new(&self.client()?, url, path, self.resume).await?;

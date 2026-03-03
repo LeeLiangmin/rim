@@ -584,7 +584,7 @@ impl ManagerSubcommands {
                     );
                     let components = component::collect_components_to_add()?;
                     if components.is_empty() {
-                        info!("{}", t!("no_component_selected"));
+                        info!("{}", tl!("no_component_selected"));
                         return Ok(false);
                     }
                     Self::Component { command: ComponentCommand::Install { insecure, components, rustup_dist_server: None } }

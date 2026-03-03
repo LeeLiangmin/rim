@@ -68,7 +68,7 @@ impl<T: ProgressHandler> UninstallConfiguration<T> {
             .start_master(t!("uninstalling").into(), utils::ProgressKind::Len(100))?;
 
         // remove all tools.
-        info!("{}", t!("uninstalling_third_party_tools"));
+        info!("{}", tl!("uninstalling_third_party_tools"));
         self.remove_tools(InstallationRecord::load_from_config_dir()?.tools, 40)?;
 
         // Remove rust toolchain via rustup.
@@ -77,7 +77,7 @@ impl<T: ProgressHandler> UninstallConfiguration<T> {
                 // if user has manually uninstall rustup, this will fails,
                 // then we can assume it has been removed.
                 // TODO: add an error type to indicate `rustup` cannot be found
-                warn!("{}: {e}", t!("uninstall_rust_toolchain_failed"));
+                warn!("{}: {e}", tl!("uninstall_rust_toolchain_failed"));
             }
             self.install_record.remove_rust_record();
             self.install_record.write()?;
@@ -88,18 +88,18 @@ impl<T: ProgressHandler> UninstallConfiguration<T> {
         if remove_self {
             // remove all env configuration.
             if !GlobalOpts::get().no_modify_env() {
-                info!("{}", t!("uninstall_env_config"));
+                info!("{}", tl!("uninstall_env_config"));
                 self.remove_rustup_env_vars()?;
                 self.inc_progress(10)?;
             } else {
-                info!("{}", t!("skip_env_modification"));
+                info!("{}", tl!("skip_env_modification"));
             }
 
-            info!("{}", t!("uninstall_self"));
+            info!("{}", tl!("uninstall_self"));
             self.remove_self()?;
             // remove persist config files
             utils::remove(rim_common::dirs::rim_config_dir())?;
-            info!("{}", t!("uninstall_self_residual_info"));
+            info!("{}", tl!("uninstall_self_residual_info"));
         } else {
             self.install_record.remove_toolkit_meta();
             self.install_record.write()?;
@@ -161,7 +161,7 @@ impl<T: ProgressHandler> UninstallConfiguration<T> {
             tools_to_uninstall.sorted()
         };
         for tool in sorted {
-            info!("{}", t!("uninstalling_for", name = tool.name()));
+            info!("{}", tl!("uninstalling_for", name = tool.name()));
             if tool.uninstall(&*self).is_err() {
                 warn!(
                     "{}",

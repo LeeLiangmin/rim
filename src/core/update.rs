@@ -90,7 +90,7 @@ impl<T: ProgressHandler + Clone + 'static> UpdateOpt<T> {
 
         // replace the current executable
         self.self_replace_including_links(&newer_manager)?;
-        info!("{}", t!("self_update_finished"));
+        info!("{}", tl!("self_update_finished"));
         Ok(true)
     }
 
@@ -160,7 +160,7 @@ impl<T: ProgressHandler + Clone + 'static> UpdateOpt<T> {
 
     /// Check self(manager) updates.
     pub async fn check_self_update(&self) -> UpdateKind<UpdatePayload> {
-        info!("{}", t!("checking_manager_updates"));
+        info!("{}", tl!("checking_manager_updates"));
 
         let latest_version = match self
             .latest_manager_release()
@@ -169,7 +169,7 @@ impl<T: ProgressHandler + Clone + 'static> UpdateOpt<T> {
         {
             Ok(version) => version.clone(),
             Err(e) => {
-                warn!("{}: {e}", t!("fetch_latest_manager_version_failed"));
+                warn!("{}: {e}", tl!("fetch_latest_manager_version_failed"));
                 return UpdateKind::Uncertain;
             }
         };
@@ -222,16 +222,16 @@ impl<T> UpdateKind<T> {
 
 /// Check toolkit updates.
 pub async fn check_toolkit_update(insecure: bool) -> UpdateKind<UpdatePayload> {
-    info!("{}", t!("checking_toolkit_updates"));
+    info!("{}", tl!("checking_toolkit_updates"));
 
     let mutex = match toolkit::Toolkit::installed(false).await {
         Ok(Some(installed)) => installed,
         Ok(None) => {
-            info!("{}", t!("no_toolkit_installed"));
+            info!("{}", tl!("no_toolkit_installed"));
             return UpdateKind::UnNeeded;
         }
         Err(e) => {
-            warn!("{}: {e}", t!("fetch_latest_toolkit_version_failed"));
+            warn!("{}: {e}", tl!("fetch_latest_toolkit_version_failed"));
             return UpdateKind::Uncertain;
         }
     };
@@ -241,11 +241,11 @@ pub async fn check_toolkit_update(insecure: bool) -> UpdateKind<UpdatePayload> {
     let latest_toolkit = match toolkit::latest_installable_toolkit(installed, insecure).await {
         Ok(Some(tk)) => tk,
         Ok(None) => {
-            info!("{}", t!("no_available_updates", toolkit = &installed.name));
+            info!("{}", tl!("no_available_updates", toolkit = &installed.name));
             return UpdateKind::UnNeeded;
         }
         Err(e) => {
-            warn!("{}: {e}", t!("fetch_latest_toolkit_version_failed"));
+            warn!("{}: {e}", tl!("fetch_latest_toolkit_version_failed"));
             return UpdateKind::Uncertain;
         }
     };
