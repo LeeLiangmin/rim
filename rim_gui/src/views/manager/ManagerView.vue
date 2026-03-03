@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { invokeCommand, KitItem, managerConf, ManagerOperation } from '@/utils';
-import { computed, inject, onMounted, ref, type Ref } from 'vue';
+import { managerConf, ManagerOperation } from '@/utils';
+import { computed, inject, onBeforeUnmount, onMounted, ref, type Ref } from 'vue';
 import { event } from '@tauri-apps/api';
 import { useCustomRouter } from '@/router';
 import { CliPayload, UpdatePayload } from '@/utils/types/payloads';
+import { useToolkitInstallation } from '@/composables/useToolkitInstallation';
+import ToolkitItem from './ToolkitItem.vue';
 
 const { routerPush } = useCustomRouter();
+const { install, getInstallError, isInstallingToolkit } = useToolkitInstallation();
 
-// Inject error state and retry function from parent layout
 const kitsLoadError = inject<Ref<string | undefined>>('kitsLoadError', ref(undefined));
 const isLoadingKits = inject<Ref<boolean>>('isLoadingKits', ref(false));
 const retryLoadKits = inject<() => Promise<void>>('retryLoadKits', async () => {});
@@ -18,51 +20,16 @@ const latestToolkitUrl = ref('');
 
 const displayFormat = ref<'list' | 'card'>('list');
 
-// Track installation errors for each toolkit URL
-const installErrors = ref<Map<string, string>>(new Map());
-const isInstalling = ref<Map<string, boolean>>(new Map());
-
 function uninstall() {
   managerConf.setOperation(ManagerOperation.UninstallToolkit);
   routerPush('/manager/uninstall');
 }
 
-async function install(url: string) {
-  // Check if this is a retry (previous error exists)
-  const isRetry = installErrors.value.has(url);
-  
-  // Clear previous error for this URL
-  installErrors.value.delete(url);
-  isInstalling.value.set(url, true);
-  
-  try {
-    // If retrying, force refresh to ensure a fresh download
-    const toolkit = await invokeCommand('get_toolkit_from_url', { 
-      url: url, 
-      force_refresh: isRetry 
-    }, { silent: true }) as KitItem;
-    await managerConf.setCurrent(toolkit);
-    managerConf.setOperation(ManagerOperation.Update);
-    routerPush('/manager/change');
-  } catch (error: any) {
-    // Store error message for this URL
-    const errorMessage = error?.toString() || String(error) || 'Unknown error occurred';
-    installErrors.value.set(url, errorMessage);
-  } finally {
-    isInstalling.value.delete(url);
-  }
-}
-
-function getInstallError(url: string): string | undefined {
-  return installErrors.value.get(url);
-}
-
-function isInstallingToolkit(url: string): boolean {
-  return isInstalling.value.get(url) || false;
-}
+let unlistenChangeView: (() => void) | null = null;
+let unlistenUpdateAvailable: (() => void) | null = null;
 
 onMounted(async () => {
-  event.listen('change-view', (event) => {
+  unlistenChangeView = await event.listen('change-view', (event) => {
     let payload = event.payload as CliPayload;
     if (payload.command === 'Uninstall') {
       managerConf.setOperation(ManagerOperation.UninstallToolkit);
@@ -70,13 +37,18 @@ onMounted(async () => {
     routerPush(payload.path);
   });
 
-  event.listen('toolkit:update-available', (event) => {
+  unlistenUpdateAvailable = await event.listen('toolkit:update-available', (event) => {
     let payload = event.payload as UpdatePayload[];
     let maybeUrl = payload[1].data;
     if (maybeUrl) {
       latestToolkitUrl.value = maybeUrl;
     }
   });
+});
+
+onBeforeUnmount(() => {
+  unlistenChangeView?.();
+  unlistenUpdateAvailable?.();
 });
 </script>
 
@@ -125,7 +97,7 @@ onMounted(async () => {
       </div>
 
       <div :class="['toolkit-list', displayFormat]">
-        <!-- Error state: show error message and retry button -->
+        <!-- Error state -->
         <base-card v-if="kitsLoadError" class="error-card" ml="1rem" mr="1.2rem" flex="~ col" gap="1rem">
           <div flex="~ col" gap="0.5rem">
             <span class="error-title">{{ $t('failed_to_load_toolkits') }}</span>
@@ -139,65 +111,32 @@ onMounted(async () => {
             <spinner v-if="isLoadingKits" size="18px" color="blue" />
           </div>
         </base-card>
-        
+
         <!-- Loading state -->
         <base-card v-else-if="isLoadingKits && availableKits.length === 0" class="loading-card" ml="1rem" mr="1.2rem" flex="~ col" gap="1rem">
           <base-progress w="full" kind="spinner" />
           <p text="regular">{{ $t('loading_toolkits') }}</p>
           <p text="regular" class="loading-hint">{{ $t('loading_toolkits_network_hint') }}</p>
         </base-card>
-        
+
         <!-- Empty state -->
         <base-card v-else-if="!isLoadingKits && availableKits.length === 0" class="empty-card" ml="1rem" mr="1.2rem" text="center">
           <p text="regular">{{ $t('no_available_toolkits') }}</p>
         </base-card>
-        
-        <!-- Success state: show toolkits -->
-        <base-card class="toolkit-item" v-for="toolkit in availableKits" :key="toolkit.manifestURL"
-          :interactive="displayFormat === 'card' && !getInstallError(toolkit.manifestURL)" 
-          @click="displayFormat === 'card' && !getInstallError(toolkit.manifestURL) ? install(toolkit.manifestURL) : null">
-          <div flex="~ col">
-            <span class="toolkit-name">
-              {{ toolkit.name }}
 
-              <div class="latest-indicator" v-if="toolkit.manifestURL === latestToolkitUrl">New</div>
-            </span>
-            <span class="toolkit-version">{{ toolkit.version }}</span>
-            <span mt="1rem" c-regular>{{ toolkit.desc }}</span>
-            
-            <!-- Error message -->
-            <div v-if="getInstallError(toolkit.manifestURL)" class="install-error" mt="1rem" flex="~ col" gap="0.5rem">
-              <span class="error-text" c-regular>{{ getInstallError(toolkit.manifestURL) }}</span>
-              <base-button 
-                v-if="displayFormat === 'card'"
-                theme="primary" 
-                :disabled="isInstallingToolkit(toolkit.manifestURL)"
-                @click.stop="install(toolkit.manifestURL)"
-                mt="0.5rem">
-                {{ isInstallingToolkit(toolkit.manifestURL) ? $t('retrying') : $t('retry') }}
-              </base-button>
-            </div>
-          </div>
-          <div class="button-container" v-if="displayFormat === 'list'">
-            <base-button 
-              v-if="!getInstallError(toolkit.manifestURL)"
-              class="button" 
-              theme="primary" 
-              :disabled="isInstallingToolkit(toolkit.manifestURL)"
-              @click="install(toolkit.manifestURL)">
-              {{ isInstallingToolkit(toolkit.manifestURL) ? $t('installing') : $t('install') }}
-            </base-button>
-            <div v-else flex="~ col" gap="0.5rem">
-              <base-button 
-                class="button" 
-                theme="primary" 
-                :disabled="isInstallingToolkit(toolkit.manifestURL)"
-                @click="install(toolkit.manifestURL)">
-                {{ isInstallingToolkit(toolkit.manifestURL) ? $t('retrying') : $t('retry') }}
-              </base-button>
-            </div>
-          </div>
-        </base-card>
+        <!-- Toolkit items -->
+        <ToolkitItem
+          v-for="toolkit in availableKits"
+          :key="toolkit.manifestURL"
+          :name="toolkit.name"
+          :version="toolkit.version"
+          :desc="toolkit.desc"
+          :is-latest="toolkit.manifestURL === latestToolkitUrl"
+          :display-format="displayFormat"
+          :installing="isInstallingToolkit(toolkit.manifestURL)"
+          :error="getInstallError(toolkit.manifestURL)"
+          @install="install(toolkit.manifestURL)"
+        />
       </div>
     </section>
   </div>
@@ -210,28 +149,11 @@ onMounted(async () => {
   font-size: clamp(20px, 2.6vh, 35px);
 }
 
-.latest-indicator {
-  background-color: red;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, .6), 0 12px 16px rgba(0, 0, 0, .12);
-  border-radius: 20vh;
-  color: white;
-  text-align: center;
-  width: 6vw;
-  font-size: 2.3vh;
-  margin-left: 1rem;
-}
-
 .toolkit-version {
   --uno: 'c-regular';
   font-weight: 600;
   margin-top: 1rem;
   font-size: 2.2vh;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 .format-icons {
@@ -270,25 +192,16 @@ onMounted(async () => {
   scrollbar-gutter: stable;
 }
 
-.toolkit-list.list .toolkit-item {
+.toolkit-list.list :deep(.toolkit-item) {
   display: flex;
   justify-content: space-between;
   margin-bottom: 3vh;
   align-items: center;
 }
 
-.toolkit-list.list .toolkit-item .toolkit-name {
+.toolkit-list.list :deep(.toolkit-item .toolkit-name) {
   display: flex;
   justify-content: left;
-}
-
-.toolkit-list.list .toolkit-item .button-container {
-  width: 25%;
-  text-align: end;
-}
-
-.toolkit-list.list .toolkit-item .button-container .button {
-  width: 45%;
 }
 
 .toolkit-list.card {
@@ -297,7 +210,7 @@ onMounted(async () => {
   gap: 2rem;
 }
 
-.toolkit-list.card .toolkit-item {
+.toolkit-list.card :deep(.toolkit-item) {
   padding: 5%;
   max-height: 180px;
   display: flex;
@@ -306,12 +219,12 @@ onMounted(async () => {
   justify-content: center;
 }
 
-.toolkit-list.card .toolkit-item .toolkit-name {
+.toolkit-list.card :deep(.toolkit-item .toolkit-name) {
   display: flex;
   justify-content: center;
 }
 
-.toolkit-list.card .toolkit-item * {
+.toolkit-list.card :deep(.toolkit-item *) {
   cursor: pointer;
 }
 
@@ -347,19 +260,5 @@ onMounted(async () => {
 .error-hint {
   font-size: clamp(11px, 1.6vh, 14px);
   opacity: 0.85;
-}
-
-.install-error {
-  padding: 0.75rem;
-  background: rgba(255, 59, 48, 0.05);
-  border: 1px solid rgba(255, 59, 48, 0.2);
-  border-radius: 4px;
-}
-
-.error-text {
-  font-size: clamp(11px, 1.5vh, 14px);
-  color: #ff3b30;
-  word-break: break-word;
-  line-height: 1.4;
 }
 </style>
