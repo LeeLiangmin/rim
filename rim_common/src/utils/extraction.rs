@@ -277,32 +277,35 @@ struct ExtractHelperBoxed<'a> {
 }
 
 impl ExtractHelperBoxed<'_> {
-    fn start_progress_bar(&mut self, style: ProgressKind) -> Result<()> {
-        // Extract only the file name from the path, similar to download progress
+    fn start_progress_bar(&mut self, style: ProgressKind) {
         let file_name = self.file_path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_else(|| self.file_path.to_str().unwrap_or("unknown"));
-        self.handler.as_mut().start(
+        if let Err(e) = self.handler.as_mut().start(
             format!("extracting file '{}'", file_name),
             style,
-        )?;
-        Ok(())
+        ) {
+            log::debug!("progress start failed: {e}");
+        }
     }
 
-    fn update_progress_bar(&self, prog: Option<u64>) -> Result<()> {
-        self.handler.update(prog)
+    fn update_progress_bar(&self, prog: Option<u64>) {
+        if let Err(e) = self.handler.update(prog) {
+            log::trace!("progress update failed: {e}");
+        }
     }
 
-    fn end_progress_bar(&self) -> Result<()> {
-        self.handler.finish("extraction complete".to_string())
+    fn end_progress_bar(&self) {
+        if let Err(e) = self.handler.finish("extraction complete".to_string()) {
+            log::debug!("progress finish failed: {e}");
+        }
     }
 
     fn extract_zip(&mut self, archive: &mut ZipArchive<File>) -> Result<()> {
         let zip_len = archive.len();
 
-        // Init progress
-        self.start_progress_bar(ProgressKind::Len(zip_len.try_into()?))?;
+        self.start_progress_bar(ProgressKind::Len(zip_len.try_into()?));
 
         for i in 0..zip_len {
             let mut zip_file = archive.by_index(i)?;
@@ -329,9 +332,9 @@ impl ExtractHelperBoxed<'_> {
                 }
             }
 
-            self.update_progress_bar(Some(i.try_into()?))?;
+            self.update_progress_bar(Some(i.try_into()?));
         }
-        self.end_progress_bar()?;
+        self.end_progress_bar();
 
         Ok(())
     }
@@ -344,8 +347,7 @@ impl ExtractHelperBoxed<'_> {
             .sum();
         let mut extracted_len: u64 = 0;
 
-        // Init progress bar
-        self.start_progress_bar(ProgressKind::Bytes(sz_len))?;
+        self.start_progress_bar(ProgressKind::Bytes(sz_len));
 
         archive.for_each_entries(|entry, reader| {
             let mut buf = [0_u8; 1024];
@@ -376,16 +378,12 @@ impl ExtractHelperBoxed<'_> {
                     }
                     out_file.write_all(&buf[..read_size])?;
                     extracted_len += read_size as u64;
-                    // Update progress bar
-                    self.update_progress_bar(Some(extracted_len))
-                        .map_err(|anyhow_err| {
-                            sevenz_rust::Error::Other(anyhow_err.to_string().into())
-                        })?;
+                    self.update_progress_bar(Some(extracted_len));
                 }
             }
         })?;
 
-        self.end_progress_bar()?;
+        self.end_progress_bar();
         Ok(())
     }
 
@@ -422,29 +420,25 @@ impl ExtractHelperBoxed<'_> {
         #[cfg(unix)]
         tar_archive.set_preserve_permissions(true);
 
-        // Init progress bar with entry count
         if entry_count > 0 {
-            self.start_progress_bar(ProgressKind::Len(entry_count))?;
+            self.start_progress_bar(ProgressKind::Len(entry_count));
         } else {
-            // Fallback to spinner if we couldn't count entries
             self.start_progress_bar(ProgressKind::Spinner {
                 auto_tick_duration: Some(std::time::Duration::from_millis(100)),
-            })?;
+            });
         }
 
-        // Extract entries and update progress
         let mut entries = tar_archive.entries()?;
         let mut processed = 0u64;
         while let Some(mut entry) = entries.next().transpose()? {
             entry.unpack_in(self.output_dir)?;
             processed += 1;
             if entry_count > 0 {
-                self.update_progress_bar(Some(processed))?;
+                self.update_progress_bar(Some(processed));
             }
         }
 
-        // Stop progress bar's progress
-        self.end_progress_bar()?;
+        self.end_progress_bar();
         Ok(())
     }
 }
