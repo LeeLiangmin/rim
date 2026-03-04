@@ -153,7 +153,7 @@ impl ToolchainInstaller {
                 .filter_map(|c| (!c.is_profile).then_some(&c.name));
             info!(
                 "{}",
-                t!(
+                tl!(
                     "install_toolchain_components",
                     list = comp_args
                         .clone()
@@ -194,7 +194,7 @@ impl ToolchainInstaller {
 
         info!(
             "{}",
-            t!(
+            tl!(
                 "uninstall_toolchain_components",
                 list = comp_args
                     .clone()
@@ -295,7 +295,7 @@ impl ToolchainInstaller {
                 .unwrap_or_else(|| unreachable!("already checked in if condition"));
             info!(
                 "{}",
-                t!("use_offline_dist_server", url = local_server.as_str())
+                tl!("use_offline_dist_server", url = local_server.as_str())
             );
             std::env::set_var(RUSTUP_DIST_SERVER, local_server.as_str());
         } else {

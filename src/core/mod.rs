@@ -243,7 +243,7 @@ fn handle_migration() -> Result<()> {
             (true, true) => {
                 warn!(
                     "{}",
-                    t!(
+                    tl!(
                         "duplicated_config_files",
                         first = new_file.display(),
                         second = old_file.display()

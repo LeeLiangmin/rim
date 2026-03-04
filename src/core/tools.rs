@@ -495,9 +495,9 @@ impl Plugin {
                     let arg_opt = format!("--{op}-extension");
                     info!(
                         "{}",
-                        t!(
+                        tl!(
                             "handling_extension_info",
-                            op = t!(op),
+                            op = tl!(op),
                             ext = plugin_path.display(),
                             program = program
                         )
@@ -508,7 +508,7 @@ impl Plugin {
                         Err(_) if uninstall => {
                             info!(
                                 "{}",
-                                t!(
+                                tl!(
                                     "skip_extension_uninstall_warn",
                                     ext = plugin_path.display(),
                                     program = program

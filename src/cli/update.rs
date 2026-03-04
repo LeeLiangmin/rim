@@ -93,7 +93,7 @@ async fn update_toolkit_(
     // notify user that we will install the latest update to replace their current installation
     info!(
         "{}",
-        t!(
+        tl!(
             "pre_update_note",
             target_version = latest_toolkit.version,
             current_version = installed.version

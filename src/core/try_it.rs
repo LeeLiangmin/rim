@@ -20,7 +20,7 @@ pub fn export_demo_project(path: Option<&Path>) -> Result<PathBuf> {
     let example_dir = example_sources.export(&path_to_init)?;
     info!(
         "{}",
-        t!("demo_project_exported", dir = example_dir.display())
+        tl!("demo_project_exported", dir = example_dir.display())
     );
     
     Ok(example_dir)

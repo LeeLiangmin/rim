@@ -165,7 +165,7 @@ impl<T: ProgressHandler> UninstallConfiguration<T> {
             if tool.uninstall(&*self).is_err() {
                 warn!(
                     "{}",
-                    t!(
+                    tl!(
                         "skip_non_exist_component_uninstallation",
                         tool = tool.name()
                     )

@@ -52,7 +52,7 @@ impl<T: ProgressHandler + Clone + 'static> UpdateOpt<T> {
         if !skip_check && !self.check_self_update().await.update_needed() {
             info!(
                 "{}",
-                t!(
+                tl!(
                     "latest_manager_installed",
                     version = env!("CARGO_PKG_VERSION")
                 )

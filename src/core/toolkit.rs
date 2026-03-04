@@ -213,7 +213,7 @@ pub async fn latest_installable_toolkit(
     } else {
         info!(
             "{}",
-            t!(
+            tl!(
                 "latest_toolkit_installed",
                 name = installed.name,
                 version = cur_version

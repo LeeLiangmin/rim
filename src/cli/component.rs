@@ -171,7 +171,7 @@ fn uninstall_components(components: &[String]) -> Result<()> {
             .join(",");
         warn!(
             "{}",
-            t!("skip_non_exist_component_uninstallation", tool = names)
+            tl!("skip_non_exist_component_uninstallation", tool = names)
         );
     }
     if tc_comps_to_remove.is_empty() && tools_to_remove.is_empty() {

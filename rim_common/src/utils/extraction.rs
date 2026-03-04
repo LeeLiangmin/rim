@@ -68,32 +68,20 @@ impl<'a> Extractable<'a> {
 
         let kind = match ext {
             "7z" => {
-                info!(
-                    "{}",
-                    t!("loading_archive_info", kind = ext, path = path.display())
-                );
+                info!("extracting {} archive '{}'", ext, path.display());
                 ExtractableKind::SevenZ(SevenZReader::open(path, Password::empty())?)
             }
             "zip" => {
-                info!(
-                    "{}",
-                    t!("loading_archive_info", kind = ext, path = path.display())
-                );
+                info!("extracting {} archive '{}'", ext, path.display());
                 ExtractableKind::Zip(ZipArchive::new(File::open(path)?)?)
             }
             "gz" | "crate" => {
-                info!(
-                    "{}",
-                    t!("loading_archive_info", kind = ext, path = path.display())
-                );
+                info!("extracting {} archive '{}'", ext, path.display());
                 let tar_gz = GzDecoder::new(File::open(path)?);
                 ExtractableKind::Gz(tar::Archive::new(tar_gz))
             }
             "xz" => {
-                info!(
-                    "{}",
-                    t!("loading_archive_info", kind = ext, path = path.display())
-                );
+                info!("extracting {} archive '{}'", ext, path.display());
                 let tar_xz = XzDecoder::new(File::open(path)?);
                 ExtractableKind::Xz(tar::Archive::new(tar_xz))
             }
@@ -296,7 +284,7 @@ impl ExtractHelperBoxed<'_> {
             .and_then(|n| n.to_str())
             .unwrap_or_else(|| self.file_path.to_str().unwrap_or("unknown"));
         self.handler.as_mut().start(
-            t!("extracting_file", file = file_name).to_string(),
+            format!("extracting file '{}'", file_name),
             style,
         )?;
         Ok(())
@@ -307,7 +295,7 @@ impl ExtractHelperBoxed<'_> {
     }
 
     fn end_progress_bar(&self) -> Result<()> {
-        self.handler.finish(t!("extraction_complete").to_string())
+        self.handler.finish("extraction complete".to_string())
     }
 
     fn extract_zip(&mut self, archive: &mut ZipArchive<File>) -> Result<()> {
