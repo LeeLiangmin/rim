@@ -192,10 +192,32 @@ impl<'a> Tool<'a> {
             ToolKind::Executables => {
                 let mut res = vec![];
                 for exe in self.path.iter() {
-                    let dest_exe = utils::copy_into(exe, config.cargo_bin())?;
-                    // double make sure each executable can be executed
-                    utils::set_exec_permission(&dest_exe)?;
-                    res.push(dest_exe);
+                    // If exe is a directory, recursively find all executables within it
+                    let executables: Vec<PathBuf> = if exe.is_dir() {
+                        utils::walk_dir(exe, false)?
+                            .into_iter()
+                            .filter(|p| utils::is_executable(p))
+                            .collect()
+                    } else if utils::is_executable(exe) {
+                        vec![exe.to_path_buf()]
+                    } else {
+                        vec![]
+                    };
+
+                    if executables.is_empty() {
+                        bail!(
+                            "no executables found for tool '{}', expected executables in path: {}",
+                            self.name(),
+                            exe.display()
+                        );
+                    }
+
+                    for src_exe in executables {
+                        let dest_exe = utils::copy_into(&src_exe, config.cargo_bin())?;
+                        // double make sure each executable can be executed
+                        utils::set_exec_permission(&dest_exe)?;
+                        res.push(dest_exe);
+                    }
                 }
                 res
             }
