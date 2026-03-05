@@ -57,6 +57,8 @@
   "description": "Description",
   "disable_ssl_cert_verification": "[Insecure] Disable SSL Certificate Verification",
   "disable_ssl_cert_verification_hint": "Skip SSL certificate validation during package downloads (not recommended)",
+  "download_attempt_failed": "Download attempt %{attempt} for '%{file}' failed: %{err}",
+  "download_retry": "Retrying download of '%{file}' (attempt %{attempt}/%{max}, waiting %{delay_secs}s)...",
   "download_success": "Successfully downloaded '%{file}'",
   "downloading": "Downloading '%{file}'...",
   "downloading_latest_manager": "downloading the latest manager release (version '%{version}')...",
@@ -174,6 +176,8 @@
   "post_installation_processing": "Processing, please wait…",
   "pre_update_confirmation": "\nThese components below will be updated, you may choose to install them, or manually select another set by entering '2'\n\n%{list}",
   "pre_update_note": "updating toolkit version to '%{target_version}' (currently '%{current_version}'), this will replace your current toolkit after installation.",
+  "pre_downloading_tool": "pre-downloading '%{name}'",
+  "pre_download_complete": "pre-download complete for '%{name}'",
   "program_does_not_exits": "unable to execute command because the program '%{program}' does not exist in the PATH variable",
   "provide_package_source": "Provide package source(s)",
   "question_components_profile": "Choose a component profile",
@@ -270,5 +274,14 @@
   "use_offline_dist_server": "attempt to use offline dist server at: '%{url}'",
   "welcome": "Thanks for using %{product}",
   "what_this_is": "This program will guide you through installing the Rust programming language, with additional third party tools of your choice.",
-  "windows_not_modify_path_warn": "the registry key HKEY_CURRENT_USER\\Environment\\PATH is not a string, skip modifying the PATH variable."
+  "windows_not_modify_path_warn": "the registry key HKEY_CURRENT_USER\\Environment\\PATH is not a string, skip modifying the PATH variable.",
+  "step_add_to_path": "Add to PATH",
+  "step_config_env": "Configure environment variables",
+  "step_config_cargo": "Configure Cargo",
+  "step_install_tools_early": "Install tools (early stage)",
+  "step_install_toolchain": "Install Rust toolchain",
+  "step_install_tools_late": "Install tools (late stage)",
+  "step_update_toolchain": "Update toolchain",
+  "step_update_tools": "Update tools",
+  "step_save_install_record": "Save installation record"
 }

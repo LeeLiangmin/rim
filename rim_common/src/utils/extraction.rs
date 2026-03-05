@@ -1,12 +1,22 @@
 use anyhow::{anyhow, bail, Result};
 use flate2::read::GzDecoder;
+use log::info;
 use sevenz_rust::{Password, SevenZReader};
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use xz2::read::XzDecoder;
 use zip::ZipArchive;
+
+/// Buffer size for I/O operations (64KB)
+const BUFFER_SIZE: usize = 64 * 1024;
+
+/// Progress update threshold (1MB) to throttle progress callbacks
+const PROGRESS_THRESHOLD: u64 = 1024 * 1024;
+
+/// Zip progress update batch size (update every N entries)
+const ZIP_PROGRESS_BATCH_SIZE: usize = 100;
 
 use crate::setter;
 use crate::utils::{ProgressHandler, ProgressKind};
@@ -302,6 +312,24 @@ impl ExtractHelperBoxed<'_> {
         }
     }
 
+    /// Create a buffered writer with standard buffer size
+    fn create_buf_writer(&self, file: File) -> BufWriter<File> {
+        BufWriter::with_capacity(BUFFER_SIZE, file)
+    }
+
+    /// Throttled progress update - only updates when threshold is reached
+    fn throttled_progress_update(
+        &self,
+        current: u64,
+        last_reported: &mut u64,
+        threshold: u64,
+    ) {
+        if current - *last_reported >= threshold {
+            self.update_progress_bar(Some(current));
+            *last_reported = current;
+        }
+    }
+
     fn extract_zip(&mut self, archive: &mut ZipArchive<File>) -> Result<()> {
         let zip_len = archive.len();
 
@@ -320,8 +348,10 @@ impl ExtractHelperBoxed<'_> {
                 ensure_dir(&out_path)?;
             } else {
                 ensure_parent_dir(&out_path)?;
-                let mut out_file = std::fs::File::create(&out_path)?;
-                std::io::copy(&mut zip_file, &mut out_file)?;
+                let out_file = std::fs::File::create(&out_path)?;
+                let mut writer = self.create_buf_writer(out_file);
+                std::io::copy(&mut zip_file, &mut writer)?;
+                writer.flush()?;
             }
 
             #[cfg(unix)]
@@ -332,7 +362,10 @@ impl ExtractHelperBoxed<'_> {
                 }
             }
 
-            self.update_progress_bar(Some(i.try_into()?));
+            // Update progress every batch size or at the last entry
+            if i % ZIP_PROGRESS_BATCH_SIZE == 0 || i == zip_len - 1 {
+                self.update_progress_bar(Some(i.try_into()?));
+            }
         }
         self.end_progress_bar();
 
@@ -346,11 +379,12 @@ impl ExtractHelperBoxed<'_> {
             .filter_map(|e| e.has_stream().then_some(e.size()))
             .sum();
         let mut extracted_len: u64 = 0;
+        let mut last_reported_progress: u64 = 0;
+        let mut buf = vec![0_u8; BUFFER_SIZE];
 
         self.start_progress_bar(ProgressKind::Bytes(sz_len));
 
         archive.for_each_entries(|entry, reader| {
-            let mut buf = [0_u8; 1024];
             let entry_path = PathBuf::from(entry.name());
             let out_path = self.output_dir.join(&entry_path);
 
@@ -370,15 +404,23 @@ impl ExtractHelperBoxed<'_> {
                     ))
                 })?;
 
-                let mut out_file = std::fs::File::create(&out_path)?;
+                let out_file = std::fs::File::create(&out_path)?;
+                let mut writer = self.create_buf_writer(out_file);
+
                 loop {
                     let read_size = reader.read(&mut buf)?;
                     if read_size == 0 {
+                        writer.flush()?;
                         break Ok(true);
                     }
-                    out_file.write_all(&buf[..read_size])?;
+                    writer.write_all(&buf[..read_size])?;
                     extracted_len += read_size as u64;
-                    self.update_progress_bar(Some(extracted_len));
+
+                    self.throttled_progress_update(
+                        extracted_len,
+                        &mut last_reported_progress,
+                        PROGRESS_THRESHOLD,
+                    );
                 }
             }
         })?;
@@ -387,54 +429,25 @@ impl ExtractHelperBoxed<'_> {
         Ok(())
     }
 
-    fn extract_tar<R: Read>(&mut self, _archive: &mut tar::Archive<R>) -> Result<()> {
-        // First, count the entries to show progress bar instead of spinner
-        // We need to recreate the archive after counting since we consumed it
-        let file = File::open(self.file_path)?;
-        let ext = self.file_path.extension().and_then(|s| s.to_str());
-        
-        // Count entries by creating a temporary archive
-        let mut entry_count = 0u64;
-        {
-            let temp_file = File::open(self.file_path)?;
-            let temp_archive: Box<dyn Read> = if ext == Some("xz") {
-                Box::new(XzDecoder::new(temp_file))
-            } else {
-                Box::new(GzDecoder::new(temp_file))
-            };
-            let mut temp_tar = tar::Archive::new(temp_archive);
-            let mut entries = temp_tar.entries()?;
-            while entries.next().transpose()?.is_some() {
-                entry_count += 1;
-            }
-        }
-
-        // Recreate the archive for actual extraction
-        let new_archive: Box<dyn Read> = if ext == Some("xz") {
-            Box::new(XzDecoder::new(file))
-        } else {
-            Box::new(GzDecoder::new(file))
-        };
-        let mut tar_archive = tar::Archive::new(new_archive);
-        
+    fn extract_tar<R: Read>(&mut self, archive: &mut tar::Archive<R>) -> Result<()> {
         #[cfg(unix)]
-        tar_archive.set_preserve_permissions(true);
+        archive.set_preserve_permissions(true);
 
-        if entry_count > 0 {
-            self.start_progress_bar(ProgressKind::Len(entry_count));
-        } else {
-            self.start_progress_bar(ProgressKind::Spinner {
-                auto_tick_duration: Some(std::time::Duration::from_millis(100)),
-            });
-        }
+        // Use entry count for progress since compressed file size and
+        // uncompressed entry sizes are in different scales
+        self.start_progress_bar(ProgressKind::Spinner {
+            auto_tick_duration: Some(std::time::Duration::from_millis(100)),
+        });
 
-        let mut entries = tar_archive.entries()?;
-        let mut processed = 0u64;
+        let mut entries = archive.entries()?;
+        let mut entry_count: u64 = 0;
+
         while let Some(mut entry) = entries.next().transpose()? {
             entry.unpack_in(self.output_dir)?;
-            processed += 1;
-            if entry_count > 0 {
-                self.update_progress_bar(Some(processed));
+            entry_count += 1;
+
+            if entry_count % (ZIP_PROGRESS_BATCH_SIZE as u64) == 0 {
+                self.update_progress_bar(None);
             }
         }
 

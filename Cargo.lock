@@ -3637,6 +3637,7 @@ dependencies = [
  "flate2",
  "indexmap 2.9.0",
  "indicatif",
+ "lazy_static",
  "log",
  "os_pipe",
  "reqwest",

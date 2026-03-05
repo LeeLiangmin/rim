@@ -57,6 +57,8 @@
   "description": "描述",
   "disable_ssl_cert_verification": "[不安全] 禁用SSL证书验证",
   "disable_ssl_cert_verification_hint": "在包下载期间跳过SSL证书验证（不推荐）",
+  "download_attempt_failed": "'%{file}' 第 %{attempt} 次下载尝试失败：%{err}",
+  "download_retry": "正在重试下载 '%{file}'（第 %{attempt}/%{max} 次，等待 %{delay_secs} 秒）...",
   "download_success": "'%{file}' 下载成功",
   "downloading": "正在下载 '%{file}'...",
   "downloading_latest_manager": "正在下载最新管理工具 (版本 '%{version}')...",
@@ -174,6 +176,8 @@
   "post_installation_processing": "正在处理，请稍候…",
   "pre_update_confirmation": "\n即将更新以下组件, 您可以选择更新它们, 或输入 '2' 来手动选择要更新的组件\n\n%{list}",
   "pre_update_note": "即将升级套件版本至 '%{target_version}' (当前 '%{current_version}')，此举将会覆盖您当前已安装的工具套件。",
+  "pre_downloading_tool": "正在预下载 '%{name}'",
+  "pre_download_complete": "'%{name}' 预下载完成",
   "program_does_not_exits": "无法运行指定命令，应用程序 '%{program}' 不在 PATH 变量中",
   "provide_package_source": "提供安装包来源",
   "question_components_profile": "选择要安装的组件",
@@ -270,5 +274,14 @@
   "use_offline_dist_server": "尝试使用 rustup 本地服务器: '%{url}'",
   "welcome": "欢迎使用%{product}",
   "what_this_is": "该程序将指导您安装 Rust 编程语言以及其他可选的第三方工具。",
-  "windows_not_modify_path_warn": "注册表值 'HKEY_CURRENT_USER\\Environment\\PATH' 不存在或不合法，跳过 PATH 变量修改."
+  "windows_not_modify_path_warn": "注册表值 'HKEY_CURRENT_USER\\Environment\\PATH' 不存在或不合法，跳过 PATH 变量修改.",
+  "step_add_to_path": "添加到PATH",
+  "step_config_env": "配置环境变量",
+  "step_config_cargo": "配置Cargo",
+  "step_install_tools_early": "安装工具（早期）",
+  "step_install_toolchain": "安装Rust工具链",
+  "step_install_tools_late": "安装工具（后期）",
+  "step_update_toolchain": "更新工具链",
+  "step_update_tools": "更新工具",
+  "step_save_install_record": "保存安装记录"
 }

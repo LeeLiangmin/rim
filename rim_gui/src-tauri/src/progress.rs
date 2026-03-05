@@ -1,5 +1,8 @@
 //! GUI progress bar module
 
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
 use rim_common::utils::{ProgressHandler, ProgressKind};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -41,11 +44,15 @@ struct ProgressPayload {
 #[derive(Debug, Clone)]
 pub(crate) struct GuiProgress {
     handle: AppHandle,
+    last_sub_update: Arc<Mutex<Instant>>,
 }
 
 impl GuiProgress {
     pub(crate) fn new(handle: AppHandle) -> Self {
-        Self { handle }
+        Self {
+            handle,
+            last_sub_update: Arc::new(Mutex::new(Instant::now())),
+        }
     }
 }
 
@@ -69,6 +76,17 @@ impl ProgressHandler for GuiProgress {
     }
 
     fn update(&self, value: Option<u64>) -> anyhow::Result<()> {
+        // Throttle sub-progress updates to at most once every 50ms
+        const MIN_UPDATE_INTERVAL_MS: u128 = 50;
+
+        if let Ok(mut last) = self.last_sub_update.lock() {
+            let now = Instant::now();
+            if now.duration_since(*last).as_millis() < MIN_UPDATE_INTERVAL_MS {
+                return Ok(());
+            }
+            *last = now;
+        }
+
         self.handle
             .emit_all(SUB_PROGRESS_UPDATE_EVENT, value.unwrap_or(1))?;
         Ok(())

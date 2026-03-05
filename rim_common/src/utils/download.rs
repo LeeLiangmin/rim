@@ -12,6 +12,12 @@ use crate::types::Proxy as CrateProxy;
 use crate::utils::{ProgressHandler, ProgressKind};
 use crate::{build_config, setter};
 
+const COPY_BUFFER_SIZE: usize = 64 * 1024;
+/// Maximum number of download retry attempts
+const MAX_RETRY_ATTEMPTS: u32 = 3;
+/// Base delay for exponential backoff (in milliseconds)
+const RETRY_BASE_DELAY_MS: u64 = 1000;
+
 fn default_proxy() -> reqwest::Proxy {
     reqwest::Proxy::custom(|url| env_proxy::for_url(url).to_url())
         .no_proxy(reqwest::NoProxy::from_env())
@@ -28,6 +34,8 @@ pub struct DownloadOpt {
     pub proxy: Option<CrateProxy>,
     /// Whether or not to resuming previous download.
     resume: bool,
+    /// Cached HTTP client for connection reuse.
+    client: Option<Client>,
 }
 
 impl DownloadOpt {
@@ -37,16 +45,24 @@ impl DownloadOpt {
             progress_handler: handler,
             insecure: false,
             proxy: None,
-            resume: false,
+            resume: true,
+            client: None,
         }
     }
 
     setter!(with_proxy(self.proxy, Option<CrateProxy>));
     setter!(insecure(self.insecure, bool));
     setter!(resume(self.resume, bool));
+    setter!(with_client(self.client, Option<Client>));
 
-    /// Build and return a client for download
+    /// Build and return a client for download.
+    ///
+    /// If a cached client is available, it will be returned directly;
+    /// otherwise a new one is built from the current configuration.
     fn client(&self) -> Result<Client> {
+        if let Some(ref client) = self.client {
+            return Ok(client.clone());
+        }
         let user_agent = format!(
             "{}/{}",
             &build_config().identifier,
@@ -64,6 +80,11 @@ impl DownloadOpt {
             .proxy(proxy)
             .build()?;
         Ok(client)
+    }
+
+    /// Build and return a reusable HTTP client based on the current configuration.
+    pub fn build_client(&self) -> Result<Client> {
+        self.client()
     }
 
     /// Consume self, and retrieve text response by sending request to a given url.
@@ -108,7 +129,7 @@ impl DownloadOpt {
         let mut src_file = fs::File::open(src).await?;
         let mut dst_file = fs::File::create(dest).await?;
 
-        let mut buf = vec![0u8; 8192];
+        let mut buf = vec![0u8; COPY_BUFFER_SIZE];
         let total_size = src_file.metadata().await?.len();
         self.progress_handler.start(
             t!("downloading", file = &self.name).into(),
@@ -132,6 +153,7 @@ impl DownloadOpt {
 
     /// Consume self, and download from given `Url` to `Path`.
     pub async fn download(mut self, url: &Url, path: &Path) -> Result<()> {
+        // File URL handling stays the same (no retry needed for local files)
         if url.scheme() == "file" {
             let src = url
                 .to_file_path()
@@ -143,24 +165,75 @@ impl DownloadOpt {
             warn!("{}", crate::tl!("insecure_download"));
         }
 
+        let mut last_error = None;
+
+        for attempt in 0..MAX_RETRY_ATTEMPTS {
+            if attempt > 0 {
+                let delay = Duration::from_millis(RETRY_BASE_DELAY_MS * 2u64.pow(attempt - 1));
+                info!("{}", crate::tl!("download_retry", file = &self.name, attempt = attempt, max = MAX_RETRY_ATTEMPTS, delay_secs = delay.as_secs()));
+                tokio::time::sleep(delay).await;
+                // Enable resume for retry attempts
+                self.resume = true;
+            }
+
+            match self.try_download(url, path).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    warn!("{}", crate::tl!("download_attempt_failed", file = &self.name, attempt = attempt + 1, err = format!("{e:#}")));
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| anyhow!("download failed after {MAX_RETRY_ATTEMPTS} attempts")))
+    }
+
+    /// Attempt a single download from given `Url` to `Path`.
+    async fn try_download(&mut self, url: &Url, path: &Path) -> Result<()> {
         let helper = DownloadHelper::new(&self.client()?, url, path, self.resume).await?;
-        let (mut resp, mut file, mut downloaded_bytes) =
+        let (mut resp, mut file, downloaded_bytes) =
             (helper.response, helper.file, helper.downloaded_bytes);
 
-        let total_size = resp
-            .content_length()
-            .ok_or_else(|| anyhow!("unable to get file length of '{url}'"))?;
+        let content_length = resp.content_length();
 
-        self.progress_handler.start(
-            t!("downloading", file = &self.name).into(),
-            ProgressKind::Bytes(total_size),
-        )?;
+        // 如果 resume 模式下服务器返回剩余 0 字节，说明文件已完整下载
+        if downloaded_bytes > 0 && content_length == Some(0) {
+            // 文件已完整存在，跳过下载
+            info!("'{}' already downloaded, skipping.", &self.name);
+            return Ok(());
+        }
 
+        // When resuming, content_length is the *remaining* bytes, not the full file size.
+        // We need the full size for the progress bar, and track only session bytes for position.
+        let total_size = content_length.map(|cl| cl + downloaded_bytes);
+
+        if let Some(size) = total_size {
+            self.progress_handler.start(
+                t!("downloading", file = &self.name).into(),
+                ProgressKind::Bytes(size),
+            )?;
+        } else {
+            // Server didn't provide Content-Length, use spinner mode
+            info!("Content-Length not available for '{}', using spinner progress", &self.name);
+            self.progress_handler.start(
+                t!("downloading", file = &self.name).into(),
+                ProgressKind::Spinner {
+                    auto_tick_duration: Some(Duration::from_millis(100)),
+                },
+            )?;
+        }
+
+        // Track bytes downloaded in this session separately for accurate progress
+        let mut session_bytes: u64 = 0;
         while let Some(chunk) = resp.chunk().await? {
             file.write_all(&chunk).await?;
-
-            downloaded_bytes = min(downloaded_bytes + chunk.len() as u64, total_size);
-            self.progress_handler.update(Some(downloaded_bytes))?;
+            session_bytes += chunk.len() as u64;
+            if let Some(size) = total_size {
+                self.progress_handler
+                    .update(Some(min(downloaded_bytes + session_bytes, size)))?;
+            } else {
+                self.progress_handler.update(None)?;
+            }
         }
 
         self.progress_handler

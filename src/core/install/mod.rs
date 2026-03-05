@@ -133,23 +133,23 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
         self.setup()?;
 
         if let Err(e) = self.config_env_vars() {
-            errors.add_step_error("配置环境变量".to_string(), e);
+            errors.add_step_error(t!("step_config_env").to_string(), e);
         }
 
         if let Err(e) = self.config_cargo() {
-            errors.add_step_error("配置Cargo".to_string(), e);
+            errors.add_step_error(t!("step_config_cargo").to_string(), e);
         }
 
         if let Err(e) = self.install_tools(&tools, &mut errors).await {
-            errors.add_step_error("安装工具（早期）".to_string(), e);
+            errors.add_step_error(t!("step_install_tools_early").to_string(), e);
         }
 
         if let Err(e) = self.install_rust(&tc_components, &mut errors).await {
-            errors.add_step_error("安装Rust工具链".to_string(), e);
+            errors.add_step_error(t!("step_install_toolchain").to_string(), e);
         }
 
         if let Err(e) = self.install_tools_late(&tools, &mut errors).await {
-            errors.add_step_error("安装工具（后期）".to_string(), e);
+            errors.add_step_error(t!("step_install_tools_late").to_string(), e);
         }
 
         errors.report();
@@ -184,12 +184,12 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
 
         if !toolchain.is_empty() {
             if let Err(e) = self.update_toolchain(&toolchain).await {
-                errors.add_step_error("更新工具链".to_string(), e);
+                errors.add_step_error(t!("step_update_toolchain").to_string(), e);
             }
         }
 
         if let Err(e) = self.update_tools(&tools, &mut errors).await {
-            errors.add_step_error("更新工具".to_string(), e);
+            errors.add_step_error(t!("step_update_tools").to_string(), e);
         }
 
         errors.report();

@@ -67,13 +67,18 @@ impl Logger {
         let mut dispatch = fern::Dispatch::new()
             .level(LevelFilter::Trace)
             .level_for("tao", LevelFilter::Error);
-        let filter_log_for_output = move |md: &log::Metadata| -> bool {
+        let filter_log_for_stdout = move |md: &log::Metadata| -> bool {
             md.level() <= self.level && md.level() != LevelFilter::Trace
+        };
+        let filter_log_for_output = move |md: &log::Metadata| -> bool {
+            md.level() <= self.level
+                && md.level() != LevelFilter::Trace
+                && md.level() != LevelFilter::Debug
         };
 
         // log to standard output (colored info label)
         let stdout = fern::Dispatch::new()
-            .filter(filter_log_for_output)
+            .filter(filter_log_for_stdout)
             .format(|out, msg, rec| {
                 out.finish(format_args!(
                     "{}: {msg}",

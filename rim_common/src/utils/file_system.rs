@@ -94,7 +94,6 @@ pub fn write_file<P: AsRef<Path>>(path: P, content: &str, append: bool) -> Resul
     }
     let mut file = options.create(true).open(path)?;
     writeln!(file, "{content}")?;
-    file.sync_data()?;
     Ok(())
 }
 
@@ -107,7 +106,6 @@ pub fn write_bytes<P: AsRef<Path>>(path: P, content: &[u8], append: bool) -> Res
     }
     let mut file = options.create(true).open(path)?;
     file.write_all(content)?;
-    file.sync_data()?;
     Ok(())
 }
 

@@ -27,7 +27,7 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
         {
             Ok(()) => {
                 if let Err(e) = add_to_path(&*self, self.cargo_bin()) {
-                    errors.add_step_error("添加到PATH".to_string(), e);
+                    errors.add_step_error(t!("step_add_to_path").to_string(), e);
                 } else {
                     self.toolchain_is_installed = true;
                 }
@@ -37,7 +37,7 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
                 self.install_record
                     .clone_toolkit_meta_from_manifest(manifest);
                 if let Err(e) = self.install_record.write() {
-                    errors.add_step_error("保存安装记录".to_string(), e);
+                    errors.add_step_error(t!("step_save_install_record").to_string(), e);
                 }
 
                 self.inc_progress(30)?;
