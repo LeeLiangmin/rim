@@ -37,6 +37,11 @@ impl UpdateOpt {
 
     setter!(insecure(self.insecure, bool));
 
+    #[cfg(test)]
+    pub(crate) fn insecure_flag(&self) -> bool {
+        self.insecure
+    }
+
     /// Calls a function to update toolkit.
     ///
     /// This is just a callback wrapper (for now), you still have to provide a function to do the
@@ -94,6 +99,7 @@ impl UpdateOpt {
         let dest_name = exe!(format!("{}-manager", &build_config().identifier));
         let newer_manager = temp_root.path().join(dest_name);
         utils::DownloadOpt::new("latest manager", GlobalOpts::get().quiet)
+            .insecure(self.insecure)
             .download(&download_url, &newer_manager)
             .await?;
 
@@ -288,6 +294,17 @@ fn parse_download_url(source_path: &str) -> Result<Url> {
 
 #[cfg(test)]
 mod tests {
+    use super::UpdateOpt;
+
+    #[test]
+    fn update_opt_insecure_flag_default_and_setter() {
+        let opt = UpdateOpt::new();
+        assert!(!opt.insecure_flag());
+
+        let opt = opt.insecure(true);
+        assert!(opt.insecure_flag());
+    }
+
     #[test]
     fn version_comparison() {
         macro_rules! compare {

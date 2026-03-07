@@ -158,6 +158,11 @@ impl<'a> InstallConfiguration<'a> {
     setter!(with_progress_indicator(self.progress_indicator, Option<utils::Progress<'a>>));
     setter!(insecure(self.insecure, bool));
 
+    #[cfg(test)]
+    pub(crate) fn insecure_flag(&self) -> bool {
+        self.insecure
+    }
+
     pub(crate) fn env_vars(&self) -> Result<HashMap<&'static str, String>> {
         let cargo_home = self
             .cargo_home()
@@ -368,6 +373,7 @@ impl<'a> InstallConfiguration<'a> {
         };
         let dest = temp_dir.path().join(downloaded_file_name);
         utils::DownloadOpt::new(name, GlobalOpts::get().quiet)
+            .insecure(self.insecure)
             .with_proxy(self.manifest.proxy.clone())
             .blocking_download(url, &dest)?;
 
@@ -588,6 +594,22 @@ mod tests {
             .path()
             .join(InstallationRecord::FILENAME)
             .is_file());
+    }
+
+    #[test]
+    fn install_config_insecure_flag_default_and_setter() {
+        let raw = r#"
+[rust]
+version = "1.0.0"
+"#;
+        let manifest = ToolkitManifest::from_str(raw).unwrap();
+        let install_dir = tempfile::tempdir().unwrap();
+
+        let config = InstallConfiguration::new(install_dir.path(), &manifest).unwrap();
+        assert!(!config.insecure_flag());
+
+        let config = config.insecure(true);
+        assert!(config.insecure_flag());
     }
 
     #[test]

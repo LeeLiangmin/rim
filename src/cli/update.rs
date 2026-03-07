@@ -88,7 +88,7 @@ async fn update_toolkit_(
     // let user choose if they want to update installed component only, or want to select more components to install
     if let UpdateOption::Yes(components) = updater.to_update_option(user_selected_comps)? {
         // install update for selected components
-        let config = InstallConfiguration::new(install_dir, &manifest)?;
+        let config = InstallConfiguration::new(install_dir, &manifest)?.insecure(insecure);
         config.update(components.into_values().cloned().collect())
     } else {
         Ok(())
