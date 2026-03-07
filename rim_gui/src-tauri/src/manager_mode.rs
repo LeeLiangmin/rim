@@ -142,11 +142,12 @@ async fn get_toolkit_from_url(url: String, force_refresh: Option<bool>) -> Resul
 async fn self_update(app: AppHandle) -> Result<()> {
     let mut progress = GuiProgress::new(app.clone());
 
+    // schedule restart with certain amount of time
+    const COUNTDOWN_TIMER: u8 = 10;
+
     progress.start_master(
         t!("self_update_in_progress").to_string(),
-        ProgressKind::Spinner {
-            auto_tick_duration: None,
-        },
+        ProgressKind::Len(COUNTDOWN_TIMER.into()),
     )?;
 
     // do self update, skip version check because it should already
@@ -155,10 +156,9 @@ async fn self_update(app: AppHandle) -> Result<()> {
         return Err(anyhow::anyhow!("failed when performing self update: {e}").into());
     }
 
-    // schedule restart with certain amount of time
-    const COUNTDOWN_TIMER: u8 = 10;
     for i in (0..COUNTDOWN_TIMER).rev() {
         progress.finish_master(t!("self_update_finished_wait", timer = i).to_string())?;
+        progress.update_master(Some(1))?;
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 

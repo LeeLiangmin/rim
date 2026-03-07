@@ -18,7 +18,14 @@
     </div>
     <div v-else flex="~ col justify-center items-center">
         <span class="info-label">{{ mainProgressPayload?.message }}</span>
-        <base-progress w="full" kind="spinner" />
+        <base-progress
+            w="full"
+            h="4vh"
+            :value="mainProgress"
+            :kind="mainProgressPayload?.style?.toString() || 'len'"
+            :length="mainProgressPayload?.length"
+            :transition="false"
+        />
 
         <span class="sub-info-label">{{ subProgressPayload?.message }}</span>
         <base-progress mt="0.5rem" w="full" h="4vh" :value="subProgress" :kind="subProgressPayload?.style.toString()"
@@ -35,6 +42,7 @@ import { ProgressPayload } from "@/utils/types/payloads";
 const isUpdating = ref(false);
 
 const mainProgressPayload = ref<ProgressPayload | null>(null);
+const mainProgress = ref(0);
 const subProgress = ref(0);
 const subProgressPayload = ref<ProgressPayload | null>(null);
 
@@ -58,6 +66,13 @@ onMounted(async () => {
     event.listen('progress:main-start', (event) => {
         const payload = event.payload as ProgressPayload;
         mainProgressPayload.value = payload;
+        mainProgress.value = 0;
+    });
+
+    event.listen('progress:main-update', (event) => {
+        if (typeof event.payload === 'number') {
+            mainProgress.value += event.payload;
+        }
     });
 
     event.listen('progress:main-end', (event) => {

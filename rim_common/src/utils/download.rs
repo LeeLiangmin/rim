@@ -12,7 +12,9 @@ use crate::types::Proxy as CrateProxy;
 use crate::utils::{ProgressHandler, ProgressKind};
 use crate::{build_config, setter};
 
-const COPY_BUFFER_SIZE: usize = 64 * 1024;
+const COPY_BUFFER_SIZE: usize = 1024 * 1024;
+/// Throttle progress callback updates to reduce UI/log overhead.
+const DOWNLOAD_PROGRESS_THRESHOLD: u64 = 1024 * 1024;
 /// Maximum number of download retry attempts
 const MAX_RETRY_ATTEMPTS: u32 = 3;
 /// Base delay for exponential backoff (in milliseconds)
@@ -136,15 +138,22 @@ impl DownloadOpt {
             ProgressKind::Bytes(total_size),
         )?;
 
+        let mut copied: u64 = 0;
+        let mut last_reported: u64 = 0;
         loop {
             let bytes = src_file.read(&mut buf).await?;
             if bytes == 0 {
                 break; // EOF
             }
             dst_file.write_all(&buf[..bytes]).await?;
-            self.progress_handler.update(Some(bytes as u64))?;
+            copied += bytes as u64;
+            if copied.saturating_sub(last_reported) >= DOWNLOAD_PROGRESS_THRESHOLD {
+                self.progress_handler.update(Some(copied))?;
+                last_reported = copied;
+            }
         }
 
+        self.progress_handler.update(Some(total_size))?;
         dst_file.flush().await?;
         self.progress_handler
             .finish(t!("download_success", file = &self.name).into())?;
@@ -225,15 +234,21 @@ impl DownloadOpt {
 
         // Track bytes downloaded in this session separately for accurate progress
         let mut session_bytes: u64 = 0;
+        let mut last_reported: u64 = downloaded_bytes;
         while let Some(chunk) = resp.chunk().await? {
             file.write_all(&chunk).await?;
             session_bytes += chunk.len() as u64;
             if let Some(size) = total_size {
-                self.progress_handler
-                    .update(Some(min(downloaded_bytes + session_bytes, size)))?;
-            } else {
-                self.progress_handler.update(None)?;
+                let current = min(downloaded_bytes + session_bytes, size);
+                if current.saturating_sub(last_reported) >= DOWNLOAD_PROGRESS_THRESHOLD {
+                    self.progress_handler.update(Some(current))?;
+                    last_reported = current;
+                }
             }
+        }
+
+        if let Some(size) = total_size {
+            self.progress_handler.update(Some(size))?;
         }
 
         self.progress_handler

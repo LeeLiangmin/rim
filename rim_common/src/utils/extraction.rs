@@ -6,17 +6,21 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use xz2::read::XzDecoder;
 use zip::ZipArchive;
 
-/// Buffer size for I/O operations (64KB)
-const BUFFER_SIZE: usize = 64 * 1024;
+/// Buffer size for I/O operations (1MB)
+const BUFFER_SIZE: usize = 1024 * 1024;
 
-/// Progress update threshold (1MB) to throttle progress callbacks
-const PROGRESS_THRESHOLD: u64 = 1024 * 1024;
+/// Progress update threshold (4MB) to throttle progress callbacks
+const PROGRESS_THRESHOLD: u64 = 4 * 1024 * 1024;
 
 /// Zip progress update batch size (update every N entries)
 const ZIP_PROGRESS_BATCH_SIZE: usize = 100;
+/// Zip extraction progress threshold (512KB) for more responsive UI.
+const ZIP_PROGRESS_THRESHOLD: u64 = 512 * 1024;
 
 use crate::setter;
 use crate::utils::{ProgressHandler, ProgressKind};
@@ -24,11 +28,40 @@ use crate::utils::{ProgressHandler, ProgressKind};
 use super::file_system::{ensure_dir, ensure_parent_dir, walk_dir};
 use super::progress_bar::CliProgress;
 
+struct CountingReader<R> {
+    inner: R,
+    consumed: Arc<AtomicU64>,
+}
+
+impl<R> CountingReader<R> {
+    fn new(inner: R, consumed: Arc<AtomicU64>) -> Self {
+        Self { inner, consumed }
+    }
+}
+
+impl<R: Read> Read for CountingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n > 0 {
+            self.consumed.fetch_add(n as u64, Ordering::Relaxed);
+        }
+        Ok(n)
+    }
+}
+
 enum ExtractableKind {
     /// `7-zip` compressed files, ended with `.7z`
     SevenZ(SevenZReader<File>),
-    Gz(tar::Archive<GzDecoder<File>>),
-    Xz(tar::Archive<XzDecoder<File>>),
+    Gz {
+        archive: tar::Archive<GzDecoder<CountingReader<File>>>,
+        compressed_total: u64,
+        consumed: Arc<AtomicU64>,
+    },
+    Xz {
+        archive: tar::Archive<XzDecoder<CountingReader<File>>>,
+        compressed_total: u64,
+        consumed: Arc<AtomicU64>,
+    },
     Zip(ZipArchive<File>),
 }
 
@@ -87,13 +120,27 @@ impl<'a> Extractable<'a> {
             }
             "gz" | "crate" => {
                 info!("extracting {} archive '{}'", ext, path.display());
-                let tar_gz = GzDecoder::new(File::open(path)?);
-                ExtractableKind::Gz(tar::Archive::new(tar_gz))
+                let file = File::open(path)?;
+                let compressed_total = file.metadata()?.len();
+                let consumed = Arc::new(AtomicU64::new(0));
+                let tar_gz = GzDecoder::new(CountingReader::new(file, consumed.clone()));
+                ExtractableKind::Gz {
+                    archive: tar::Archive::new(tar_gz),
+                    compressed_total,
+                    consumed,
+                }
             }
             "xz" => {
                 info!("extracting {} archive '{}'", ext, path.display());
-                let tar_xz = XzDecoder::new(File::open(path)?);
-                ExtractableKind::Xz(tar::Archive::new(tar_xz))
+                let file = File::open(path)?;
+                let compressed_total = file.metadata()?.len();
+                let consumed = Arc::new(AtomicU64::new(0));
+                let tar_xz = XzDecoder::new(CountingReader::new(file, consumed.clone()));
+                ExtractableKind::Xz {
+                    archive: tar::Archive::new(tar_xz),
+                    compressed_total,
+                    consumed,
+                }
             }
             _ => bail!("'{ext}' is not a supported extractable file format"),
         };
@@ -144,8 +191,16 @@ impl<'a> Extractable<'a> {
         match &mut self.kind {
             ExtractableKind::Zip(archive) => helper.extract_zip(archive),
             ExtractableKind::SevenZ(archive) => helper.extract_7z(archive),
-            ExtractableKind::Gz(archive) => helper.extract_tar(archive),
-            ExtractableKind::Xz(archive) => helper.extract_tar(archive),
+            ExtractableKind::Gz {
+                archive,
+                compressed_total,
+                consumed,
+            } => helper.extract_tar(archive, *compressed_total, consumed),
+            ExtractableKind::Xz {
+                archive,
+                compressed_total,
+                consumed,
+            } => helper.extract_tar(archive, *compressed_total, consumed),
         }
     }
 
@@ -332,8 +387,21 @@ impl ExtractHelperBoxed<'_> {
 
     fn extract_zip(&mut self, archive: &mut ZipArchive<File>) -> Result<()> {
         let zip_len = archive.len();
+        let mut total_uncompressed: u64 = 0;
 
-        self.start_progress_bar(ProgressKind::Len(zip_len.try_into()?));
+        // Pre-calculate total uncompressed size from zip metadata so progress can move
+        // during large single-file extraction (instead of waiting for per-entry completion).
+        for i in 0..zip_len {
+            let zip_file = archive.by_index(i)?;
+            total_uncompressed = total_uncompressed.saturating_add(zip_file.size());
+        }
+
+        let total = total_uncompressed.max(1);
+        self.start_progress_bar(ProgressKind::Bytes(total));
+
+        let mut extracted_len: u64 = 0;
+        let mut last_reported_progress: u64 = 0;
+        let mut buf = vec![0_u8; BUFFER_SIZE];
 
         for i in 0..zip_len {
             let mut zip_file = archive.by_index(i)?;
@@ -350,8 +418,22 @@ impl ExtractHelperBoxed<'_> {
                 ensure_parent_dir(&out_path)?;
                 let out_file = std::fs::File::create(&out_path)?;
                 let mut writer = self.create_buf_writer(out_file);
-                std::io::copy(&mut zip_file, &mut writer)?;
-                writer.flush()?;
+
+                loop {
+                    let read_size = zip_file.read(&mut buf)?;
+                    if read_size == 0 {
+                        writer.flush()?;
+                        break;
+                    }
+                    writer.write_all(&buf[..read_size])?;
+                    extracted_len += read_size as u64;
+
+                    self.throttled_progress_update(
+                        extracted_len,
+                        &mut last_reported_progress,
+                        ZIP_PROGRESS_THRESHOLD,
+                    );
+                }
             }
 
             #[cfg(unix)]
@@ -362,11 +444,14 @@ impl ExtractHelperBoxed<'_> {
                 }
             }
 
-            // Update progress every batch size or at the last entry
-            if i % ZIP_PROGRESS_BATCH_SIZE == 0 || i == zip_len - 1 {
-                self.update_progress_bar(Some(i.try_into()?));
+            // Ensure periodic updates even for metadata-only entries.
+            if i % ZIP_PROGRESS_BATCH_SIZE == 0 {
+                self.update_progress_bar(Some(extracted_len.min(total)));
+                last_reported_progress = extracted_len;
             }
         }
+
+        self.update_progress_bar(Some(total));
         self.end_progress_bar();
 
         Ok(())
@@ -429,28 +514,32 @@ impl ExtractHelperBoxed<'_> {
         Ok(())
     }
 
-    fn extract_tar<R: Read>(&mut self, archive: &mut tar::Archive<R>) -> Result<()> {
+    fn extract_tar<R: Read>(
+        &mut self,
+        archive: &mut tar::Archive<R>,
+        compressed_total: u64,
+        consumed: &Arc<AtomicU64>,
+    ) -> Result<()> {
         #[cfg(unix)]
         archive.set_preserve_permissions(true);
 
-        // Use entry count for progress since compressed file size and
-        // uncompressed entry sizes are in different scales
-        self.start_progress_bar(ProgressKind::Spinner {
-            auto_tick_duration: Some(std::time::Duration::from_millis(100)),
-        });
+        let total = compressed_total.max(1);
+        self.start_progress_bar(ProgressKind::Bytes(total));
 
         let mut entries = archive.entries()?;
-        let mut entry_count: u64 = 0;
+        let mut last_reported_progress: u64 = 0;
 
         while let Some(mut entry) = entries.next().transpose()? {
             entry.unpack_in(self.output_dir)?;
-            entry_count += 1;
 
-            if entry_count % (ZIP_PROGRESS_BATCH_SIZE as u64) == 0 {
-                self.update_progress_bar(None);
+            let current = consumed.load(Ordering::Relaxed).min(total);
+            if current.saturating_sub(last_reported_progress) >= PROGRESS_THRESHOLD {
+                self.update_progress_bar(Some(current));
+                last_reported_progress = current;
             }
         }
 
+        self.update_progress_bar(Some(total));
         self.end_progress_bar();
         Ok(())
     }

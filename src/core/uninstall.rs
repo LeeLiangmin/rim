@@ -87,9 +87,14 @@ impl<T: ProgressHandler> UninstallConfiguration<T> {
         // remove the manager binary itself or update install record
         if remove_self {
             // remove all env configuration.
+            // NOTE: Environment cleanup failure should not block the main uninstall flow.
             if !GlobalOpts::get().no_modify_env() {
                 info!("{}", tl!("uninstall_env_config"));
-                self.remove_rustup_env_vars()?;
+                if let Err(e) = self.remove_rustup_env_vars() {
+                    warn!(
+                        "failed to clean environment variables during uninstall, continuing: {e:#}"
+                    );
+                }
                 self.inc_progress(10)?;
             } else {
                 info!("{}", tl!("skip_env_modification"));
