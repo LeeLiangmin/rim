@@ -320,10 +320,6 @@ fn setup_window_(app: &mut App, label: &str, url: WindowUrl, visible: bool) -> R
         log::error!("unable to apply window effects: {e}");
     }
 
-    // enable dev console only on debug mode
-    #[cfg(debug_assertions)]
-    window.open_devtools();
-
     Ok(window)
 }
 

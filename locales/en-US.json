@@ -2,11 +2,9 @@
     "install": "install",
     "update": "Update",
     "uninstall": "Uninstall",
-
     "license_agreement": "License Agreement",
     "close": "Close",
     "agree": "I agree",
-
     "install_init": "Initializing & Creating directory '%{dir}'...",
     "install_env_config": "Configuring environment variables...",
     "install_cargo_config": "Writing cargo configuration...",
@@ -15,13 +13,11 @@
     "install_toolchain": "Installing rustup and rust toolchain...",
     "update_toolchain": "Updating rustup and rust toolchain...",
     "install_via_cargo": "Installing third-party tools via cargo...",
-
     "installing_tool_info": "installing '%{name}'",
     "installing_msvc_info": "running VS BuildTools installer...",
     "msvc_installed": "VS BuildTools is successfully installed!",
     "msvc_installed_reboot_required": "VS BuildTools is successfully installed, please reboot your computer after this installation",
     "install_finish_info": "Rust is successfully installed!",
-
     "uninstalling_tool_info": "uninstalling '%{name}'",
     "unix_remove_env_fail_warn": "unable to remove the desired content from file: '%{path}'. This could mean it was already removed, please try manually removing the following content from that file if there's any: \n\n%{val}\n",
     "unix_add_path_fail_warn": "unable to add path '%{val}' to rc file '%{rc_path}' as it might already exists.",
@@ -29,12 +25,9 @@
     "windows_not_modify_path_warn": "the registry key HKEY_CURRENT_USER\\Environment\\PATH is not a string, skip modifying the PATH variable.",
     "remove_vscode_shortcut_warn": "unable to remove shortcut file '%{path}'",
     "remove_path_fail_warn": "unable to remove '%{path}', please try manually removing it.",
-
     "handling_extension_info": "%{op}ing extension '%{ext}' for program '%{program}'",
     "skip_extension_uninstall_warn": "extension '%{ext}' for '%{program}' is not installed, skipping...",
-
     "loading_archive_info": "extracting %{kind} archive '%{path}'",
-
     "default": "default",
     "required": "required",
     "installed": "installed",
@@ -49,7 +42,6 @@
     "select_components_to_remove": "Choose what components to remove: (separated multiple options by spaces)",
     "question_try_demo": "Do you want to try Rust with a demo project?",
     "demo_project_exported": "The demo project was successfully exported to '%{dir}'",
-
     "question_options": "Proceed with above options?",
     "pause_prompt": "press ENTER key to continue...",
     "confirm": "Confirm",
@@ -68,7 +60,6 @@
     "replaced_by": "replaced by '%{name}'",
     "conflict_detected": "unable to install because of the following package conflicts",
     "conflicts_with": "conflict with '%{name}'",
-
     "uninstall_confirmation": "Are you sure you want to uninstall the following components: \n\n%{list}\n",
     "uninstall_all_confirmation": "Are you sure you want to uninstall %{vendor}-manager and the following components: \n\n%{list}\n",
     "uninstall_unknown_tool_warn": "no suitable method for uninstalling tool '%{tool}', skipping",
@@ -81,15 +72,11 @@
     "uninstall_self": "Removing self & wrapping up",
     "skip_non_exist_component_uninstallation": "the following components might not exist or removed already: %{tool}, skipping...",
     "path_to_installation_not_found": "path to the it's installation at '%{path}' cannot be found.",
-
     "linux_source_hint": "Please restart the current shell or run `%{cmd}` for the environment changes to take effect",
-
     "notify_empty_path": "Please enter an installation path, or choose one using the button above",
     "notify_root_dir": "Cannot install in root directory, please select another one",
     "notify_relative_path": "Please enter the full absolute path",
-
     "fetching": "fetching",
-
     "fetch_latest_manager_version_failed": "unable to retrieve information about the latest manager version",
     "fetch_latest_toolkit_version_failed": "unable to retrieve information about the latest toolkit version",
     "current": "current",
@@ -124,7 +111,6 @@
     "install_default": "default",
     "install_everything": "everything",
     "install_custom": "customize",
-
     "skip_ssl_check": "skip SSL certificate verification",
     "update_all": "Update all (including toolkit and toolkit manager)",
     "update_self_only": "Update toolkit manager",
@@ -132,10 +118,8 @@
     "ask_uninstall_option": "Choose an uninstall option",
     "uninstall_all": "Uninstall all (including toolkit and toolkit manager)",
     "uninstall_toolkit_only": "Uninstall toolkit",
-
     "insecure_download": "skipping SSL certificate verification (requested by `--insecure` flag)",
     "insecure_http_override": "using 'http' schema to skip SSL certificate verification (requested by `--insecure` flag)",
-
     "choose_an_option": "Choose any option below",
     "no_toolkit_installed": "no toolkit was installed",
     "no_component_installed": "no component was installed",
@@ -143,10 +127,8 @@
     "toolkit": "toolkit",
     "list_option": "List component/toolkit",
     "all": "all",
-
     "self_update_in_progress": "self updating, please wait...",
     "self_update_finished": "self update success! this program will restart in %{eta}",
-
     "missing_restricted_source": "pacakge source of tool '%{name}' is restricted, which should be provided by user or has a default value, but none of those are presented",
     "remove_path_retry": "failed when removing '%{path}', retrying...",
     "removing_obsolete_tool": "Removing obsoleted tool '%{name}'",
@@ -163,5 +145,15 @@
     "no_rule_set_installed": "no rule-set was installed, the `check` command requires at least one rule-set to work, check the available tools option to see if your device support rule-set installation",
     "unable_to_run_check": "unable to perform check, maybe the rule-set wasn't installed properly",
     "use_offline_dist_server": "attempt to use offline dist server at: '%{url}'",
-    "program_does_not_exits": "unable to execute command because the program '%{program}' does not exist in the PATH variable"
+    "program_does_not_exits": "unable to execute command because the program '%{program}' does not exist in the PATH variable",
+    "backup_env_vars_fail": "Failed to backup environment variables: %{error}",
+    "backup_env_vars_success": "Environment variables backed up successfully",
+    "restore_env_var_success": "Restored environment variable: %{var}",
+    "restore_env_var_fail": "Failed to restore environment variable %{var}: %{error}",
+    "unset_env_var_fail": "Failed to unset environment variable %{var}: %{error}",
+    "delete_backup_file_fail": "Failed to delete backup file: %{error}",
+    "load_backup_fail": "Failed to load environment variable backup: %{error}",
+    "restore_env_vars_from_backup": "Restoring environment variables from backup...",
+    "no_env_backup_found_removing_vars": "No environment variable backup found, removing variables...",
+    "backup_not_deleted_partial_restore": "Not deleting env backup file because some variables failed to restore"
 }

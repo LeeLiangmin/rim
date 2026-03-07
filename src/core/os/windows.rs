@@ -1,6 +1,7 @@
 use std::env::current_exe;
 
 use crate::core::directories::RimDir;
+use crate::core::env_backup::EnvBackup;
 use crate::core::install::{EnvConfig, InstallConfiguration};
 use crate::core::uninstall::{UninstallConfiguration, Uninstallation};
 use crate::core::GlobalOpts;
@@ -12,6 +13,24 @@ pub(crate) use rustup::*;
 impl EnvConfig for InstallConfiguration<'_> {
     fn config_env_vars(&self) -> Result<()> {
         info!("{}", t!("install_env_config"));
+
+        // Backup existing environment variables from registry before setting new ones
+        let pre_existing = {
+            let mut vars = std::collections::BTreeMap::new();
+            if let Ok(env) = environment() {
+                for var_name in crate::core::ALL_VARS {
+                    if let Ok(value) = env.get_value::<String, _>(var_name) {
+                        vars.insert(var_name.to_string(), value);
+                    }
+                }
+            }
+            vars
+        };
+        if let Err(e) = EnvBackup::backup_env_vars(pre_existing) {
+            warn!("{}", t!("backup_env_vars_fail", error = e.to_string()));
+        } else {
+            info!("{}", t!("backup_env_vars_success"));
+        }
 
         for (key, val) in self.env_vars()? {
             set_env_var(key, val.encode_utf16().collect())?;
@@ -26,10 +45,56 @@ impl Uninstallation for UninstallConfiguration<'_> {
     fn remove_rustup_env_vars(&self) -> Result<()> {
         // Remove the `<InstallDir>/.cargo/bin` which is added by rustup
         let cargo_bin_dir = self.cargo_home().join("bin");
-        remove_from_path(&cargo_bin_dir)?;
+        if let Err(e) = remove_from_path(&cargo_bin_dir) {
+            warn!("failed to remove cargo bin from PATH: {e}");
+        }
 
-        for var_to_remove in crate::core::ALL_VARS {
-            unset_env_var(var_to_remove)?;
+        // Try to restore environment variables from backup first
+        match EnvBackup::load() {
+            Ok(Some(backup)) => {
+                info!("{}", t!("restore_env_vars_from_backup"));
+                let mut all_restored = true;
+                for (var_name, value) in &backup.variables {
+                    // Restore the original value
+                    if let Err(e) = set_persist_env_var(var_name, value.encode_utf16().collect()) {
+                        warn!("{}", t!("restore_env_var_fail", var = var_name, error = e.to_string()));
+                        all_restored = false;
+                    } else {
+                        info!("{}", t!("restore_env_var_success", var = var_name));
+                    }
+                }
+                // Unset variables that were added by the installer (not in the backup)
+                for var_to_remove in crate::core::ALL_VARS {
+                    if !backup.variables.contains_key(*var_to_remove) {
+                        if let Err(e) = unset_env_var(var_to_remove) {
+                            warn!("{}", t!("unset_env_var_fail", var = var_to_remove, error = e.to_string()));
+                        }
+                    }
+                }
+                // Only delete the backup file if all restorations succeeded,
+                // so the user can retry if some variables failed to restore.
+                if all_restored {
+                    if let Err(e) = EnvBackup::delete_backup_file() {
+                        warn!("{}", t!("delete_backup_file_fail", error = e.to_string()));
+                    }
+                } else {
+                    warn!("{}", t!("backup_not_deleted_partial_restore"));
+                }
+            }
+            Ok(None) => {
+                // No backup file exists, remove the environment variables as before
+                info!("{}", t!("no_env_backup_found_removing_vars"));
+                for var_to_remove in crate::core::ALL_VARS {
+                    unset_env_var(var_to_remove)?;
+                }
+            }
+            Err(e) => {
+                warn!("{}", t!("load_backup_fail", error = e.to_string()));
+                // Fallback to removing variables
+                for var_to_remove in crate::core::ALL_VARS {
+                    unset_env_var(var_to_remove)?;
+                }
+            }
         }
 
         update_env();
@@ -165,7 +230,7 @@ pub(crate) mod rustup {
         }
     }
 
-    fn environment() -> Result<RegKey> {
+    pub(super) fn environment() -> Result<RegKey> {
         RegKey::predef(HKEY_CURRENT_USER)
             .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
             .context("Failed opening Environment key")
@@ -218,7 +283,7 @@ pub(crate) mod rustup {
     }
 
     /// Set or remove env var using windows api.
-    fn set_persist_env_var(key: &str, val: Vec<u16>) -> Result<()> {
+    pub(super) fn set_persist_env_var(key: &str, val: Vec<u16>) -> Result<()> {
         if GlobalOpts::get().no_modify_env() {
             return Ok(());
         }
@@ -226,12 +291,17 @@ pub(crate) mod rustup {
         let env = environment()?;
         if val.is_empty() {
             // remove
-            // Don't do anything if the variable doesn't exist
-            if env.get_raw_value(key).is_err() {
-                return Ok(());
+            match env.get_raw_value(key) {
+                // Delete for user environment
+                Ok(_) => env.delete_value(key)?,
+                // Don't do anything if the variable doesn't exist
+                Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(e) => {
+                    return Err(anyhow!(
+                        "failed to read existing environment variable `{key}` before removing: {e}"
+                    ));
+                }
             }
-            // Delete for user environment
-            env.delete_value(key)?;
         } else {
             // set var
             let reg_value = RegValue {
@@ -261,11 +331,60 @@ pub(crate) mod rustup {
         }
     }
 
-    /// Attempt to find the position of given path in the `PATH` environment variable.
-    fn find_path_in_env(paths: &[u16], path_bytes: &[u16]) -> Option<usize> {
-        paths
-            .windows(path_bytes.len())
-            .position(|path| path == path_bytes)
+    fn lower_ascii_u16(ch: u16) -> u16 {
+        if (b'A' as u16..=b'Z' as u16).contains(&ch) {
+            ch + 32
+        } else {
+            ch
+        }
+    }
+
+    fn eq_u16_ignore_ascii_case(lhs: &[u16], rhs: &[u16]) -> bool {
+        lhs.len() == rhs.len()
+            && lhs
+                .iter()
+                .zip(rhs.iter())
+                .all(|(l, r)| lower_ascii_u16(*l) == lower_ascii_u16(*r))
+    }
+
+    /// Attempt to find the exact entry position of given path in the `PATH` environment variable.
+    ///
+    /// Return `(start, end)` (both byte index in UTF-16 code units), where `end` is exclusive.
+    /// Matching is case-insensitive for ASCII characters and boundary-aware (split by ';').
+    fn find_path_in_env(paths: &[u16], path_bytes: &[u16]) -> Option<(usize, usize)> {
+        if path_bytes.is_empty() {
+            return None;
+        }
+
+        let mut start = 0;
+        for (idx, ch) in paths.iter().enumerate() {
+            if *ch == b';' as u16 {
+                let entry = &paths[start..idx];
+                if eq_u16_ignore_ascii_case(entry, path_bytes) {
+                    return Some((start, idx));
+                }
+                start = idx + 1;
+            }
+        }
+
+        let entry = &paths[start..];
+        if eq_u16_ignore_ascii_case(entry, path_bytes) {
+            return Some((start, paths.len()));
+        }
+
+        None
+    }
+
+    fn normalize_path_for_cmp(path: &Path) -> String {
+        let mut s = path.as_os_str().to_string_lossy().replace('/', "\\");
+        while s.ends_with('\\') && !s.ends_with(":\\") && s.len() > 1 {
+            s.pop();
+        }
+        s.to_ascii_lowercase()
+    }
+
+    fn path_eq_ignore_case(lhs: &Path, rhs: &Path) -> bool {
+        normalize_path_for_cmp(lhs) == normalize_path_for_cmp(rhs)
     }
 
     /// Add or remove a path for current running process.
@@ -274,7 +393,7 @@ pub(crate) mod rustup {
         match (orig_path, is_remove) {
             (Some(path_oss), false) => {
                 let mut path_list = env::split_paths(&path_oss).collect::<Vec<_>>();
-                if path_list.iter().any(|p| p.as_path() == path) {
+                if path_list.iter().any(|p| path_eq_ignore_case(p.as_path(), path)) {
                     return Ok(());
                 }
                 path_list.insert(0, path.to_path_buf());
@@ -283,7 +402,9 @@ pub(crate) mod rustup {
             (None, false) => env::set_var("PATH", path.as_os_str()),
             (Some(path_oss), true) => {
                 let path_list = env::split_paths(&path_oss).collect::<Vec<_>>();
-                let new_paths = path_list.iter().filter(|p| *p != path);
+                let new_paths = path_list
+                    .iter()
+                    .filter(|p| !path_eq_ignore_case(p.as_path(), path));
                 env::set_var("PATH", env::join_paths(new_paths)?);
             }
             // Nothing to remove
@@ -312,7 +433,7 @@ pub(crate) mod rustup {
         if find_path_in_env(&user_path_orig, &path_bytes).is_some() {
             // The path was already added, return without doing anything.
             return Ok(());
-        };
+        }
 
         let mut user_path_new = path_bytes;
         user_path_new.push(b';' as u16);
@@ -343,25 +464,27 @@ pub(crate) mod rustup {
         };
         let path_bytes = path.as_os_str().encode_wide().collect::<Vec<_>>();
 
-        let Some(idx) = find_path_in_env(&user_path_orig, &path_bytes) else {
+        let Some((start, end)) = find_path_in_env(&user_path_orig, &path_bytes) else {
             // The path is not added, return without doing anything.
             return Ok(());
         };
-        // If there's a trailing semicolon (likely, since we probably added one
-        // during install), include that in the substring to remove. We don't search
-        // for that to find the string, because if it's the last string in the path,
-        // there may not be.
-        let mut len = path_bytes.len();
-        if user_path_orig.get(idx + path_bytes.len()) == Some(&(b';' as u16)) {
-            len += 1;
-        }
 
-        let mut user_path_new = user_path_orig[..idx].to_owned();
-        user_path_new.extend_from_slice(&user_path_orig[idx + len..]);
-        // Don't leave a trailing ; though, we don't want an empty string in the path.
-        if user_path_new.last() == Some(&(b';' as u16)) {
-            user_path_new.pop();
-        }
+        // Remove complete PATH entry with delimiter handling:
+        // - first entry: remove following ';' if present
+        // - middle/last entry: remove preceding ';'
+        let (remove_start, remove_end) = if start == 0 {
+            let end = if user_path_orig.get(end) == Some(&(b';' as u16)) {
+                end + 1
+            } else {
+                end
+            };
+            (0, end)
+        } else {
+            (start - 1, end)
+        };
+
+        let mut user_path_new = user_path_orig[..remove_start].to_owned();
+        user_path_new.extend_from_slice(&user_path_orig[remove_end..]);
 
         // Apply the new path
         set_persist_env_var("PATH", user_path_new)?;
@@ -369,6 +492,31 @@ pub(crate) mod rustup {
         update_env();
 
         Ok(())
+    }
+
+    #[cfg(test)]
+    mod rustup_tests {
+        use super::*;
+
+        #[test]
+        fn find_path_in_env_is_boundary_aware() {
+            let paths = "C:\\bin2;D:\\tools"
+                .encode_utf16()
+                .collect::<Vec<_>>();
+            let target = "C:\\bin".encode_utf16().collect::<Vec<_>>();
+
+            assert!(find_path_in_env(&paths, &target).is_none());
+        }
+
+        #[test]
+        fn find_path_in_env_is_case_insensitive_for_ascii() {
+            let paths = "C:\\RUST\\bin;D:\\tools"
+                .encode_utf16()
+                .collect::<Vec<_>>();
+            let target = "c:\\rust\\BIN".encode_utf16().collect::<Vec<_>>();
+
+            assert_eq!(find_path_in_env(&paths, &target), Some((0, 11)));
+        }
     }
 }
 

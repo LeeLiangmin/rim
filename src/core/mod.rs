@@ -7,6 +7,8 @@ pub mod components;
 mod custom_instructions;
 mod dependency_handler;
 pub(crate) mod directories;
+#[cfg(windows)]
+pub(crate) mod env_backup;
 pub mod install;
 mod locales;
 pub(crate) mod os;

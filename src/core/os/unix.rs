@@ -4,7 +4,7 @@ use std::{env, path::Path};
 use crate::core::install::{EnvConfig, InstallConfiguration};
 use crate::core::uninstall::{UninstallConfiguration, Uninstallation};
 use crate::core::GlobalOpts;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use indexmap::IndexSet;
 use rim_common::utils;
 
@@ -21,7 +21,12 @@ impl EnvConfig for InstallConfiguration<'_> {
             info!("{}", t!("install_env_config"));
 
             let backup_dir = self.install_dir.join("backup");
-            utils::ensure_dir(&backup_dir)?;
+            if let Err(e) = utils::ensure_dir(&backup_dir) {
+                warn!(
+                    "failed to create backup directory '{}': {e}",
+                    backup_dir.display()
+                );
+            }
             for sh in shell::get_available_shells() {
                 // This string will be wrapped in a certain identifier comments.
                 for rc in sh.update_rcs() {
@@ -32,12 +37,14 @@ impl EnvConfig for InstallConfiguration<'_> {
                     let new_content =
                         rc_content_with_env_vars(sh.as_ref(), &old_content, &vars_raw);
 
-                    utils::write_file(&rc, &new_content, false).with_context(|| {
-                        format!(
-                            "failed to append environment vars to shell profile: '{}'",
+                    // Do NOT fail installation if writing to shell profile fails.
+                    // Users can always manually configure their environment.
+                    if let Err(e) = utils::write_file(&rc, &new_content, false) {
+                        warn!(
+                            "failed to write environment vars to shell profile '{}': {e}",
                             rc.display()
-                        )
-                    })?;
+                        );
+                    }
                 }
             }
         }
@@ -54,8 +61,9 @@ impl EnvConfig for InstallConfiguration<'_> {
 
 /// In case we mess up the user environment
 fn create_backup_for_rc(path: &Path, backup_dir: &Path) -> Result<()> {
-    // Safe to unwrap as long as the path is one of the `sh.update_rcs()`
-    let rc_filename = path.file_name().unwrap();
+    let Some(rc_filename) = path.file_name() else {
+        return Ok(());
+    };
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -75,12 +83,18 @@ impl Uninstallation for UninstallConfiguration<'_> {
         if GlobalOpts::get().no_modify_env() {
             return Ok(());
         }
-        remove_all_config_section()
+        remove_all_config_section();
+        Ok(())
     }
 
     fn remove_self(&self) -> Result<()> {
         // Remove the installer dir.
-        std::fs::remove_dir_all(&self.install_dir)?;
+        if let Err(e) = std::fs::remove_dir_all(&self.install_dir) {
+            warn!(
+                "failed to remove install directory '{}': {e}",
+                self.install_dir.display()
+            );
+        }
         Ok(())
     }
 }
@@ -106,7 +120,7 @@ where
     Ok(())
 }
 
-fn remove_all_config_section() -> Result<()> {
+fn remove_all_config_section() {
     // Remove the profiles content wrapped between `RC_FILE_SECTION_START` to `RC_FILE_SECTION_END`,
     // which is our dedicated configuration sections.
     let start = shell::RC_FILE_SECTION_START;
@@ -114,23 +128,25 @@ fn remove_all_config_section() -> Result<()> {
     for sh in shell::get_available_shells() {
         for rc in sh.rcfiles().iter().filter(|rc| rc.is_file()) {
             let to_remove_summary = format!("{start}\n...\n{end}");
-            remove_section_or_warn_(rc, &to_remove_summary, |cont| {
+            if let Err(e) = remove_section_or_warn_(rc, &to_remove_summary, |cont| {
                 remove_sub_string_between(cont, start, end)
-            })?;
+            }) {
+                warn!(
+                    "failed to clean config section from '{}': {e}",
+                    rc.display()
+                );
+            }
         }
     }
-
-    Ok(())
 }
 
 fn remove_sub_string_between(input: String, start: &str, end: &str) -> Option<String> {
-    // TODO: this might not be an optimized solution.
     let start_pos = input.lines().position(|line| line == start)?;
     let end_pos = input.lines().position(|line| line == end)?;
-    assert!(
-        end_pos >= start_pos,
-        "Interal Error: Failed deleting sub string, the start pos is larger than end pos"
-    );
+    if end_pos < start_pos {
+        // Malformed section markers, skip gracefully
+        return None;
+    }
     let result = input
         .lines()
         .take(start_pos)
@@ -146,10 +162,10 @@ fn remove_sub_string_between(input: String, start: &str, end: &str) -> Option<St
 fn get_sub_string_between(input: &str, start: &str, end: &str) -> Option<String> {
     let start_pos = input.lines().position(|line| line == start)?;
     let end_pos = input.lines().position(|line| line == end)?;
-    assert!(
-        end_pos >= start_pos,
-        "Interal Error: Failed extracting sub string, the start pos is larger than end pos"
-    );
+    if end_pos < start_pos {
+        // Malformed section markers, skip gracefully
+        return None;
+    }
     let result = input
         .lines()
         .skip(start_pos + 1)
@@ -181,7 +197,13 @@ fn modify_path(path: &Path, remove: bool) -> Result<()> {
     // Add the new path to bash profiles
     for sh in shell::get_available_shells() {
         for rc in sh.update_rcs().iter().filter(|rc| rc.is_file()) {
-            let rc_content = utils::read_to_string("rc", rc)?;
+            let rc_content = match utils::read_to_string("rc", rc) {
+                Ok(content) => content,
+                Err(e) => {
+                    warn!("failed to read shell profile '{}': {e}", rc.display());
+                    continue;
+                }
+            };
             let Some(new_content) =
                 rc_content_with_path(sh.as_ref(), path_str, &rc_content, remove)
             else {
@@ -201,12 +223,12 @@ fn modify_path(path: &Path, remove: bool) -> Result<()> {
                 warn!("{warn}");
                 continue;
             };
-            utils::write_file(rc, &new_content, false).with_context(|| {
-                format!(
-                    "failed to append PATH variable to shell profile: '{}'",
+            if let Err(e) = utils::write_file(rc, &new_content, false) {
+                warn!(
+                    "failed to update PATH in shell profile '{}': {e}",
                     rc.display()
-                )
-            })?;
+                );
+            }
         }
     }
 
