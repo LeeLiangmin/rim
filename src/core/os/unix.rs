@@ -99,43 +99,55 @@ impl Uninstallation for UninstallConfiguration<'_> {
     }
 }
 
-fn remove_section_or_warn_<F>(path: &Path, to_remove_sum: &str, operation: F) -> Result<()>
+fn remove_section_or_warn_<F>(path: &Path, to_remove_sum: &str, mut operation: F)
 where
-    F: FnOnce(String) -> Option<String>,
+    F: FnMut(String) -> Option<String>,
 {
-    let content = utils::read_to_string("rc", path)?;
-    if operation(content)
-        .and_then(|s| utils::write_file(path, &s, false).ok())
-        .is_none()
-    {
-        warn!(
-            "{}",
-            t!(
-                "unix_remove_env_fail_warn",
-                path = path.display(),
-                val = to_remove_sum
-            )
-        );
+    loop {
+        let content = match utils::read_to_string("rc", path) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!(
+                    "{}",
+                    t!(
+                        "unix_remove_env_fail_warn",
+                        path = path.display(),
+                        val = format!("{to_remove_sum} (read error: {e})")
+                    )
+                );
+                return;
+            }
+        };
+        // Stop when there are no more sections to remove
+        let Some(new_content) = operation(content) else {
+            break;
+        };
+        if utils::write_file(path, &new_content, false).is_err() {
+            warn!(
+                "{}",
+                t!(
+                    "unix_remove_env_fail_warn",
+                    path = path.display(),
+                    val = to_remove_sum
+                )
+            );
+            return;
+        }
     }
-    Ok(())
 }
 
 fn remove_all_config_section() {
     // Remove the profiles content wrapped between `RC_FILE_SECTION_START` to `RC_FILE_SECTION_END`,
     // which is our dedicated configuration sections.
+    // Loop until all sections (handles duplicate/stacked sections) are removed.
     let start = shell::RC_FILE_SECTION_START;
     let end = shell::RC_FILE_SECTION_END;
     for sh in shell::get_available_shells() {
         for rc in sh.rcfiles().iter().filter(|rc| rc.is_file()) {
             let to_remove_summary = format!("{start}\n...\n{end}");
-            if let Err(e) = remove_section_or_warn_(rc, &to_remove_summary, |cont| {
+            remove_section_or_warn_(rc, &to_remove_summary, |cont| {
                 remove_sub_string_between(cont, start, end)
-            }) {
-                warn!(
-                    "failed to clean config section from '{}': {e}",
-                    rc.display()
-                );
-            }
+            });
         }
     }
 }
@@ -147,15 +159,18 @@ fn remove_sub_string_between(input: String, start: &str, end: &str) -> Option<St
         // Malformed section markers, skip gracefully
         return None;
     }
+    // Preserve the original trailing newline if present
+    let trailing_newline = if input.ends_with('\n') { "\n" } else { "" };
     let result = input
         .lines()
         .take(start_pos)
         .chain(input.lines().skip(end_pos + 1))
         .collect::<Vec<_>>()
-        .join("\n")
-        .trim_end()
-        .to_string();
-    Some(result)
+        .join("\n");
+    // Strip only the trailing blank lines that were part of the removed section,
+    // but restore the original file's trailing newline.
+    let result = result.trim_end().to_string();
+    Some(format!("{result}{trailing_newline}"))
 }
 
 /// Get the enclosing string between two desired **lines**.
@@ -272,6 +287,26 @@ fn rc_content_with_env_vars(
 ///   insert `export PATH="{path_str};$PATH"` at the end of the config section.
 /// - If there was a config section and an `export PATH` line with it,
 ///   push the `path_str` at the start of the `PATH` value, such as `export PATH="{path_str};/old/value;$PATH"`
+/// Check if `path_str` is an exact entry (delimited by `":"`) in the PATH export line.
+///
+/// This prevents a false-positive where `/path/to/bin` would match `/path/to/bin2`.
+fn path_str_in_export(path_str: &str, export_line: &str) -> bool {
+    // Extract the value part after the first `=` or after `PATH ` (fish style)
+    let value_part = if let Some(idx) = export_line.find('=') {
+        &export_line[idx + 1..]
+    } else if let Some(idx) = export_line.find("PATH ") {
+        &export_line[idx + 5..]
+    } else {
+        return false;
+    };
+    // Strip surrounding quotes
+    let value_part = value_part.trim_matches('"').trim_matches('\'');
+    // Split by `:` (bash) or ` ` (fish) and check for exact match
+    value_part
+        .split([':', ' '])
+        .any(|segment| segment.trim_matches('"').trim_matches('\'') == path_str)
+}
+
 fn rc_content_with_path(
     sh: &dyn shell::UnixShell,
     path_str: &str,
@@ -286,14 +321,22 @@ fn rc_content_with_path(
         // Find the line that is setting path variable
         let maybe_setting_path = existing_configs.lines().find(|line| line.contains("PATH"));
 
-        // Check if the path was already exported.
+        // Check if the path was already exported using exact boundary matching.
         if let Some(path_export) = maybe_setting_path {
-            if path_export.contains(path_str) && !remove {
+            if path_str_in_export(path_str, path_export) && !remove {
+                // Path already present, nothing to add.
                 return None;
             }
         }
 
-        let new_content = sh.command_to_update_path(maybe_setting_path, path_str, remove)?;
+        let maybe_new_content = sh.command_to_update_path(maybe_setting_path, path_str, remove);
+
+        // When removing and `command_to_update_path` returns None, it means the path is
+        // not present in the PATH line — this is a no-op, not an error.
+        let Some(new_content) = maybe_new_content else {
+            // Nothing to change.
+            return Some(old_content.to_string());
+        };
 
         let mut new_configs = existing_configs.clone();
         if let Some(setting_path) = maybe_setting_path {
@@ -383,13 +426,23 @@ mod shell {
             remove: bool,
         ) -> Option<String> {
             if let Some(cmd) = old_command {
-                let path_str_with_spliter = format!("{path_str}:");
                 if remove {
-                    Some(cmd.replace(&path_str_with_spliter, ""))
+                    // Remove the path entry with its trailing `:` separator, or a
+                    // leading `:` when path_str is the last (or only) entry.
+                    let with_trailing = format!("{path_str}:");
+                    let with_leading = format!(":{path_str}");
+                    if cmd.contains(&with_trailing) {
+                        Some(cmd.replace(&with_trailing, ""))
+                    } else if cmd.contains(&with_leading) {
+                        Some(cmd.replace(&with_leading, ""))
+                    } else {
+                        // Path is not present; nothing to remove, signal no-op.
+                        None
+                    }
                 } else {
                     let where_to_insert = cmd.find('\"')? + 1;
                     let mut new_cmd = cmd.to_string();
-                    new_cmd.insert_str(where_to_insert, &path_str_with_spliter);
+                    new_cmd.insert_str(where_to_insert, &format!("{path_str}:"));
                     Some(new_cmd)
                 }
             } else {
@@ -535,9 +588,18 @@ mod shell {
             remove: bool,
         ) -> Option<String> {
             if let Some(cmd) = old_command {
-                let path_str_with_spliter = format!("{path_str} ");
                 if remove {
-                    Some(cmd.replace(&path_str_with_spliter, ""))
+                    // Fish separates entries with spaces; remove `path_str ` (trailing space)
+                    // or ` path_str` (leading space) to handle the last entry case.
+                    let with_trailing = format!("{path_str} ");
+                    let with_leading = format!(" {path_str}");
+                    if cmd.contains(&with_trailing) {
+                        Some(cmd.replace(&with_trailing, ""))
+                    } else if cmd.contains(&with_leading) {
+                        Some(cmd.replace(&with_leading, ""))
+                    } else {
+                        None
+                    }
                 } else {
                     let (before_path, after_path) = cmd.split_once("PATH")?;
                     Some(format!("{before_path}PATH {path_str}{after_path}"))
@@ -597,6 +659,7 @@ export RUSTUP_UPDATE_ROOT='https://example.com/rustup'
             shell::RC_FILE_SECTION_END,
         )
         .unwrap();
+        // Input ends with `\n`; the function preserves the original trailing newline.
         assert_eq!(
             new,
             "\
@@ -606,7 +669,8 @@ export RUSTUP_UPDATE_ROOT='https://example.com/rustup'
 
 [[ -f ~/.bashrc ]] && . ~/.bashrc
 
-. \"$HOME/.cargo/env\""
+. \"$HOME/.cargo/env\"
+"
         );
     }
 
@@ -891,5 +955,75 @@ export PATH="/path/to/ruby/bin:/path/to/python/bin:/path/to/rust/bin:$PATH"
 export PATH=/some/user/defined/bin:$PATH
 "#
         );
+    }
+
+    #[test]
+    fn path_prefix_not_matched_as_exact_path() {
+        // `/path/to/bin` must NOT match when the export contains `/path/to/bin2`
+        let export_line = r#"export PATH="/path/to/bin2:$PATH""#;
+        assert!(!super::path_str_in_export("/path/to/bin", export_line));
+        // But should match when it IS an exact entry
+        assert!(super::path_str_in_export("/path/to/bin2", export_line));
+    }
+
+    #[test]
+    fn remove_last_path_entry_no_trailing_colon() {
+        // When a path is the only entry, there's no trailing `:`, so we remove via leading `:`
+        let shell = shell::Bash;
+        let path_str = "/path/to/bin";
+        // PATH has only one managed entry; $PATH comes after without extra paths
+        let old_cmd = r#"export PATH="/path/to/bin:$PATH""#;
+        let cmd = shell.command_to_update_path(Some(old_cmd), path_str, true);
+        // Removing `/path/to/bin:` from the value leaves `"$PATH"` which is correct
+        assert_eq!(cmd, Some(r#"export PATH="$PATH""#.to_string()));
+    }
+
+    #[test]
+    fn remove_last_fish_path_entry_no_trailing_space() {
+        let shell = shell::Fish;
+        let path_str = "/path/to/bin";
+        // Only entry; removing it should leave `$PATH`
+        let old_cmd = "set -Ux PATH /path/to/bin $PATH";
+        let cmd = shell.command_to_update_path(Some(old_cmd), path_str, true);
+        assert_eq!(cmd, Some("set -Ux PATH $PATH".to_string()));
+    }
+
+    #[test]
+    fn remove_nonexistent_path_returns_unchanged_rc() {
+        // When path is not in the config section, rc_content_with_path should return
+        // the original content unchanged (not None), so callers don't log a spurious warning.
+        let existing_rc = r#"# ===== rustup config section START =====
+export PATH="/path/to/rust/bin:$PATH"
+# ===== rustup config section END ====="#;
+        let shell = shell::Bash;
+        let result = rc_content_with_path(&shell, "/nonexistent/bin", existing_rc, true);
+        assert_eq!(result, Some(existing_rc.to_string()));
+    }
+
+    #[test]
+    fn remove_sub_string_preserves_trailing_newline() {
+        let input = "line1\n# ===== rustup config section START =====\ncontent\n# ===== rustup config section END =====\nline2\n".to_string();
+        let result = super::remove_sub_string_between(
+            input,
+            shell::RC_FILE_SECTION_START,
+            shell::RC_FILE_SECTION_END,
+        )
+        .unwrap();
+        assert!(result.ends_with('\n'), "trailing newline must be preserved");
+        assert_eq!(result, "line1\nline2\n");
+    }
+
+    #[test]
+    fn remove_sub_string_no_trailing_newline_preserved() {
+        // Input without trailing newline should also have no trailing newline
+        let input = "line1\n# ===== rustup config section START =====\ncontent\n# ===== rustup config section END =====\nline2".to_string();
+        let result = super::remove_sub_string_between(
+            input,
+            shell::RC_FILE_SECTION_START,
+            shell::RC_FILE_SECTION_END,
+        )
+        .unwrap();
+        assert!(!result.ends_with('\n'), "no trailing newline when original had none");
+        assert_eq!(result, "line1\nline2");
     }
 }
