@@ -27,8 +27,14 @@ impl<T> EnvConfig for InstallConfiguration<'_, T> {
 
 impl<T> Uninstallation for UninstallConfiguration<T> {
     fn remove_rustup_env_vars(&self) -> Result<()> {
+        // Best-effort cleanup: any env operation failure should not block uninstall.
         let cargo_bin_dir = self.cargo_home().join("bin");
-        remove_from_path(&cargo_bin_dir)?;
+        if let Err(e) = remove_from_path(&cargo_bin_dir) {
+            warn!(
+                "failed to remove '{}' from PATH during uninstall env cleanup: {e:#}",
+                cargo_bin_dir.display()
+            );
+        }
 
         let backup = env_backup::load();
         let (orig_rustup, orig_cargo) =
@@ -36,30 +42,47 @@ impl<T> Uninstallation for UninstallConfiguration<T> {
 
         match (&orig_rustup, &orig_cargo) {
             (Some(rh), Some(ch)) => {
-                info!("Restoring RUSTUP_HOME to '{}', CARGO_HOME to '{}'",
-                      rh.display(), ch.display());
-                set_env_var(RUSTUP_HOME, rh.as_os_str().encode_wide().collect())?;
-                set_env_var(CARGO_HOME, ch.as_os_str().encode_wide().collect())?;
+                info!(
+                    "Restoring RUSTUP_HOME to '{}', CARGO_HOME to '{}'",
+                    rh.display(),
+                    ch.display()
+                );
+                if let Err(e) = set_env_var(RUSTUP_HOME, rh.as_os_str().encode_wide().collect()) {
+                    warn!("failed to restore {RUSTUP_HOME}: {e:#}");
+                }
+                if let Err(e) = set_env_var(CARGO_HOME, ch.as_os_str().encode_wide().collect()) {
+                    warn!("failed to restore {CARGO_HOME}: {e:#}");
+                }
 
                 let cargo_bin = ch.join("bin");
                 if cargo_bin.is_dir() {
-                    add_to_path(&cargo_bin)?;
+                    if let Err(e) = add_to_path(&cargo_bin) {
+                        warn!("failed to re-add '{}' to PATH: {e:#}", cargo_bin.display());
+                    }
                 }
             }
             _ => {
                 if let Some(rh) = &orig_rustup {
-                    set_env_var(RUSTUP_HOME, rh.as_os_str().encode_wide().collect())?;
-                } else {
-                    unset_env_var(RUSTUP_HOME)?;
+                    if let Err(e) = set_env_var(RUSTUP_HOME, rh.as_os_str().encode_wide().collect())
+                    {
+                        warn!("failed to restore {RUSTUP_HOME}: {e:#}");
+                    }
+                } else if let Err(e) = unset_env_var(RUSTUP_HOME) {
+                    warn!("failed to unset {RUSTUP_HOME}: {e:#}");
                 }
+
                 if let Some(ch) = &orig_cargo {
-                    set_env_var(CARGO_HOME, ch.as_os_str().encode_wide().collect())?;
+                    if let Err(e) = set_env_var(CARGO_HOME, ch.as_os_str().encode_wide().collect()) {
+                        warn!("failed to restore {CARGO_HOME}: {e:#}");
+                    }
                     let cargo_bin = ch.join("bin");
                     if cargo_bin.is_dir() {
-                        add_to_path(&cargo_bin)?;
+                        if let Err(e) = add_to_path(&cargo_bin) {
+                            warn!("failed to re-add '{}' to PATH: {e:#}", cargo_bin.display());
+                        }
                     }
-                } else {
-                    unset_env_var(CARGO_HOME)?;
+                } else if let Err(e) = unset_env_var(CARGO_HOME) {
+                    warn!("failed to unset {CARGO_HOME}: {e:#}");
                 }
             }
         }
@@ -68,11 +91,16 @@ impl<T> Uninstallation for UninstallConfiguration<T> {
             if env_backup::is_path_var(key) {
                 continue;
             }
-            if let Some(ref value) = backup.get(*key) {
+
+            let result = if let Some(ref value) = backup.get(*key) {
                 info!("Restoring {key} to '{value}'");
-                set_env_var(key, value.encode_utf16().collect())?;
+                set_env_var(key, value.encode_utf16().collect())
             } else {
-                unset_env_var(key)?;
+                unset_env_var(key)
+            };
+
+            if let Err(e) = result {
+                warn!("failed to restore env var '{key}' during uninstall cleanup: {e:#}");
             }
         }
 

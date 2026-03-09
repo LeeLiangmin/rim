@@ -13,6 +13,16 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use url::Url;
 
+const SUPPORTED_ARCHIVE_SUFFIXES: &[&str] = &[
+    ".zip",
+    ".tar.gz",
+    ".tar.xz",
+    ".tgz",
+    ".7z",
+    ".gz",
+    ".xz",
+    ".crate",
+];
 
 impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
     /// Check if a file is a nested archive that needs extraction.
@@ -64,12 +74,11 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
         }
 
         if let Some(file_name) = file_path.file_name().and_then(|n| n.to_str()) {
-            let archive_extensions = [".zip", ".tar.gz", ".tar.xz", ".tgz", ".7z", ".gz", ".xz"];
-            if archive_extensions
+            if SUPPORTED_ARCHIVE_SUFFIXES
                 .iter()
                 .any(|ext| file_name.ends_with(ext))
             {
-                if let Some(ext) = archive_extensions
+                if let Some(ext) = SUPPORTED_ARCHIVE_SUFFIXES
                     .iter()
                     .find(|ext| file_name.ends_with(*ext))
                 {
@@ -457,12 +466,23 @@ impl<'a, T: ProgressHandler + Clone + 'static> InstallConfiguration<'a, T> {
     /// Detect file format from content and rename if needed.
     /// Returns the final file path (possibly renamed).
     fn detect_and_rename_file_format(&self, file_path: &Path) -> Result<PathBuf> {
-        if !file_path.is_file() || utils::Extractable::is_supported(file_path) {
+        if !file_path.is_file() {
             return Ok(file_path.to_path_buf());
         }
 
-        let Some(detected_format) = utils::Extractable::detect_format_from_content(file_path)
-        else {
+        // Fast path: if filename already has a known archive extension, skip content probing.
+        let file_name = file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        let has_supported_ext = SUPPORTED_ARCHIVE_SUFFIXES
+            .iter()
+            .any(|ext| file_name.ends_with(ext));
+        if has_supported_ext {
+            return Ok(file_path.to_path_buf());
+        }
+
+        let Some(detected_format) = utils::Extractable::detect_format_from_content(file_path) else {
             return Ok(file_path.to_path_buf());
         };
 

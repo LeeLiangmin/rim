@@ -1,6 +1,7 @@
 import { installConf } from "./installConf";
 import { AppInfo } from "./types/AppInfo";
-import { RestrictedComponent } from "./types/Component";import { invoke } from '@tauri-apps/api';
+import { RestrictedComponent } from "./types/Component";
+import { invoke } from '@tauri-apps/api';
 import { message } from '@tauri-apps/api/dialog';
 
 type EnforceableOption = [string, boolean];
@@ -21,21 +22,42 @@ export const defaultBaseConfig: BaseConfig = {
   insecure: false,
 };
 
+function normalizeInvokeError(error: unknown): string {
+  if (typeof error === 'string' && error.trim()) {
+    return error;
+  }
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  try {
+    const asString = String(error);
+    if (asString && asString !== '[object Object]') {
+      return asString;
+    }
+  } catch (_) {
+    // ignore stringify failure
+  }
+  return '发生了一个未知错误';
+}
+
 // 使用 message invoke 显示错误信息
-export async function invokeCommand(command: string, args = {}, options?: { silent?: boolean }) {
+export async function invokeCommand(
+  command: string,
+  args = {},
+  options?: { silent?: boolean; title?: string },
+) {
   try {
     return await invoke(command, args);
-  } catch (error: any) {
-    // 如果设置了 silent 模式，不显示错误对话框，直接抛出错误
+  } catch (error: unknown) {
     if (options?.silent) {
       throw error;
     }
-    // 捕获错误并显示对话框
-    await message(error || '发生了一个错误', {
-      title: '错误',
+
+    await message(normalizeInvokeError(error), {
+      title: options?.title || '错误',
       type: 'error',
     });
-    throw error; // 重新抛出错误以便外部的 .catch 继续处理
+    throw error;
   }
 }
 

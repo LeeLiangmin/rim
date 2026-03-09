@@ -101,23 +101,41 @@ impl<T> Uninstallation for UninstallConfiguration<T> {
             return Ok(());
         }
 
-        // 1. Remove our source command from rc files
+        // 1. Remove our source command from rc files (best-effort, non-blocking)
         for sh in shell::get_available_shells() {
             let env_script_path = self.install_dir.join(sh.env_script().name);
-            let source_command = sh.source_string(utils::path_to_str(&env_script_path)?);
+            let source_command = match utils::path_to_str(&env_script_path) {
+                Ok(path) => sh.source_string(path),
+                Err(e) => {
+                    warn!(
+                        "failed to resolve env script path '{}' during uninstall cleanup: {e:#}",
+                        env_script_path.display()
+                    );
+                    continue;
+                }
+            };
+
             for rc in sh.rcfiles().iter().filter(|f| f.is_file()) {
-                let mut content = utils::read_to_string("rc file", rc)?;
+                let mut content = match utils::read_to_string("rc file", rc) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        warn!("failed to read rc file '{}' during cleanup: {e:#}", rc.display());
+                        continue;
+                    }
+                };
                 remove_legacy_config_section(&mut content);
                 if update_content(&mut content, &source_command, true) {
-                    utils::write_file(rc, &content, false)?;
+                    if let Err(e) = utils::write_file(rc, &content, false) {
+                        warn!(
+                            "failed to write rc file '{}' during cleanup: {e:#}",
+                            rc.display()
+                        );
+                    }
                 }
             }
         }
 
-        // 2. Restore backed-up env vars to rc files (same approach as Windows)
-        //    Always remove any existing exports for our vars first (cleans stray entries).
-        //    If backup empty (user had no Rust before install): leave clean, no restore.
-        //    If backup non-empty: add restored values + PATH when CARGO_HOME restored.
+        // 2. Restore backed-up env vars to rc files (best-effort)
         let backup = env_backup::load();
 
         for sh in shell::get_available_shells() {
