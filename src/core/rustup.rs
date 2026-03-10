@@ -215,20 +215,146 @@ impl ToolchainInstaller {
 
     // Rustup self uninstall all the components and toolchains.
     pub(crate) fn remove_self(&self, config: &UninstallConfiguration) -> Result<()> {
-        let progress = utils::CliProgress::new(GlobalOpts::get().quiet);
-        let spinner = (progress.start)(
-            t!("uninstalling_rust_toolchain").to_string(),
-            utils::Style::Spinner {
-                auto_tick_duration: Some(std::time::Duration::from_millis(100)),
-            },
-        )?;
+        info!("{}", t!("uninstalling_rust_toolchain"));
+
+        // On Windows, `rustup self uninstall` is extremely slow because it removes
+        // `RUSTUP_HOME` which contains `toolchains/<ver>/share/doc/rust/html/` —
+        // tens of thousands of tiny HTML files.  NTFS metadata updates + Windows
+        // Defender real-time scanning make this take minutes with high CPU/fan.
+        //
+        // Workaround: **rename** the heavy sub-directories to a sibling trash
+        // location (instant on the same NTFS volume), then after `rustup` finishes,
+        // spawn a **detached background process** (`rd /s /q`) to delete them.
+        // The user sees ~1s instead of minutes.
+        #[cfg(windows)]
+        let _background_cleanup = {
+            let rustup_home = config.rustup_home();
+            let mut trash_dir: Option<std::path::PathBuf> = None;
+
+            if rustup_home.exists() {
+                // Create a trash directory OUTSIDE install_dir — MUST be on the
+                // same NTFS volume for rename to be instant.  We go to the parent
+                // of install_dir so that the later walk_dir in `remove_self` won't
+                // stumble over the background-delete remnants.
+                let trash = config
+                    .install_dir()
+                    .parent()
+                    .unwrap_or(config.install_dir())
+                    .join(format!(".rustup-cleanup-{}", std::process::id()));
+                if std::fs::create_dir_all(&trash).is_ok() {
+                    let mut moved_something = false;
+                    for subdir in &["toolchains", "downloads", "tmp", "update-hashes"] {
+                        let src = rustup_home.join(subdir);
+                        if src.is_dir() {
+                            let dest = trash.join(subdir);
+                            debug!("moving '{}' -> '{}'", src.display(), dest.display());
+                            if std::fs::rename(&src, &dest).is_ok() {
+                                moved_something = true;
+                            }
+                        }
+                    }
+                    if moved_something {
+                        trash_dir = Some(trash);
+                    } else {
+                        _ = std::fs::remove_dir(&trash);
+                    }
+                }
+            }
+            trash_dir
+        };
 
         let rustup = config.cargo_bin().join(RUSTUP);
-        run!(rustup, "self", "uninstall", "-y")?;
+        let uninstall_result = run!(rustup, "self", "uninstall", "-y");
 
-        (progress.stop)(&spinner, t!("rust_toolchain_uninstalled").to_string());
+        #[cfg(windows)]
+        {
+            if let Err(err) = uninstall_result {
+                // `rustup self uninstall` may still fail due to transient file locks
+                // (antivirus, indexer).  Fall back to removing RUSTUP_HOME ourselves.
+                warn!("{}: {err}", t!("uninstall_rust_toolchain_failed"));
+                if let Err(e) = windows_remove_dir_with_retry(config.rustup_home()) {
+                    warn!("failed to remove RUSTUP_HOME after retries: {e}");
+                }
+            }
+
+            // Spawn a detached background process to delete the trash directory.
+            // This runs after rustup is done so the user is not blocked.
+            // Always attempt cleanup regardless of earlier errors.
+            if let Some(trash) = _background_cleanup {
+                windows_background_delete(&trash);
+            }
+        }
+
+        #[cfg(not(windows))]
+        uninstall_result?;
+
+        info!("{}", t!("rust_toolchain_uninstalled"));
         Ok(())
     }
+}
+
+/// Spawn a fully detached `cmd /c rd /s /q` process to delete a directory tree
+/// **in the background**.  The caller does not wait for it to finish.
+///
+/// Uses `DETACHED_PROCESS | CREATE_NO_WINDOW` creation flags so that the
+/// spawned process is **not** attached to the parent's console.  This way,
+/// closing the console window (or the parent process exiting) will not
+/// terminate the background deletion.
+#[cfg(windows)]
+fn windows_background_delete(path: &Path) {
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    // Detach from parent console so closing the window won't kill this child.
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    const DETACHED_PROCESS: u32 = 0x00000008;
+
+    if !path.exists() {
+        return;
+    }
+
+    debug!("spawning background deletion of '{}'", path.display());
+
+    let _ = Command::new("cmd")
+        .args(["/c", "rd", "/s", "/q"])
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .spawn();
+}
+
+/// Remove a directory on Windows with retries, handling transient permission errors
+/// caused by antivirus software, search indexers, etc.
+#[cfg(windows)]
+fn windows_remove_dir_with_retry(path: &Path) -> Result<()> {
+    use std::io::ErrorKind;
+
+    if !path.exists() {
+        return Ok(());
+    }
+
+    const RETRY_TIMES: u8 = 5;
+    for attempt in 1..=RETRY_TIMES {
+        match std::fs::remove_dir_all(path) {
+            Ok(()) => return Ok(()),
+            Err(err) if err.kind() == ErrorKind::NotFound => return Ok(()),
+            Err(err) if err.kind() == ErrorKind::PermissionDenied => {
+                warn!(
+                    "unable to remove '{}', retrying ({attempt}/{RETRY_TIMES}): {err}",
+                    path.display()
+                );
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    anyhow::bail!(
+        "failed to remove '{}' after {RETRY_TIMES} retries",
+        path.display()
+    )
 }
 
 fn ensure_rustup_dist_server_env(
