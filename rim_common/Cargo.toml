@@ -29,6 +29,13 @@ toml.workspace = true
 url.workspace = true
 xz2.workspace = true
 zip.workspace = true
+hmac = "0.12"
+sha1 = "0.10"
+base64 = "0.22"
+
+[build-dependencies]
+toml_edit = "0.22"
+base64 = "0.22"
 
 [target."cfg(windows)".dependencies]
 winapi = { version = "0.3", features = ["winbase"] }

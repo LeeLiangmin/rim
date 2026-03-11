@@ -25,3 +25,26 @@ vendor = "Rust 中国社区"
 product = "Rust 中国社区发行版"
 app_name = "Rust 安装管理器"
 content_source = "内容来源：Rust 中国社区，Rust 原生社区，第三方开源社区"
+
+# ===== OBS 签名认证配置 =====
+# 凭证定义：引用名 -> 编译时由 build.rs 从环境变量读取 AK/SK 加密后填入
+# 环境变量命名规范：OBS_AK_{NAME} / OBS_SK_{NAME}（NAME 为凭证引用名的大写形式）
+
+[obs_credentials.rust_mirror]
+# build.rs 读取 OBS_AK_RUST_MIRROR / OBS_SK_RUST_MIRROR
+encrypted_ak = ""
+encrypted_sk = ""
+
+[obs_credentials.rust_dist]
+# build.rs 读取 OBS_AK_RUST_DIST / OBS_SK_RUST_DIST
+encrypted_ak = ""
+encrypted_sk = ""
+
+# 签名规则：URL 域名模式 -> 凭证引用名（按顺序匹配，命中第一条即停止）
+[[obs_sign_rules]]
+url_pattern = "rust-mirror.obs.*.myhuaweicloud.com"
+credential = "rust_mirror"
+
+[[obs_sign_rules]]
+url_pattern = "rust-dist.obs.*.myhuaweicloud.com"
+credential = "rust_dist"

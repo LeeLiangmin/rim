@@ -49,7 +49,8 @@
 <script setup lang="ts">
 import { invokeCommand } from "@/utils";
 import { onBeforeUnmount, onMounted, ref } from "vue";
-import { event, UnlistenFn } from "@tauri-apps/api";
+import { event } from "@tauri-apps/api";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { ProgressPayload } from "@/utils/types/payloads";
 
 const isUpdating = ref(false);

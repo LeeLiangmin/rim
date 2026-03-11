@@ -405,10 +405,17 @@ fn install_crate<T>(
         .map(|pkg| pkg.name.as_str())
         .unwrap_or(name);
 
-    // Step 2: modify `cargo/config.toml` to update patch information
-    // FIXME: This method might disrupt existing configuration that was manually altered by user,
-    // use `toml-edit` to modify it instead.
-    let mut cargo_config = CargoConfig::load_from_dir(config.cargo_home())?;
+    // Step 2: write patch information to `crates/.cargo/config.toml` instead of
+    // the global `CARGO_HOME/config.toml`, so that only projects created under
+    // the `crates/` directory will automatically pick up these patches via
+    // Cargo's hierarchical configuration lookup.
+    // This avoids the "Patch was not used in the crate graph" warning for
+    // projects that don't depend on these crates.
+    let crates_dir = config.crates_dir();
+    let crates_cargo_dir = crates_dir.join(".cargo");
+    utils::ensure_dir(&crates_cargo_dir)?;
+
+    let mut cargo_config = CargoConfig::load_from_dir(&crates_cargo_dir)?;
 
     // store crate's name and path pair as dependency patch config
     // if this crate contains multiple sub-crates (a.k.a workspace), we need to
@@ -430,12 +437,15 @@ fn install_crate<T>(
                     )
                 })?
                 .name;
-            cargo_config.add_patch(member_name, member_path);
+            cargo_config.add_patch(member_name, &member_path);
         }
     } else {
         cargo_config.add_patch(crate_name, &crate_dir);
     };
-    cargo_config.write_to_dir(config.cargo_home())?;
+    cargo_config.write_to_dir(&crates_cargo_dir)?;
+
+    // Step 3: generate a usage guide (README.md) in the crates directory
+    generate_crate_usage_guide(crates_dir, &cargo_config)?;
 
     Ok(vec![crate_dir])
 }
@@ -446,12 +456,121 @@ fn uninstall_crate<T: RimDir>(name: &str, path: &PathExt<'_>, config: T) -> Resu
     // remove the source code dir
     utils::remove(path)?;
 
-    // update cargo config
-    let mut cargo_config = CargoConfig::load_from_dir(config.cargo_home())?;
-    cargo_config
+    // update cargo config in `crates/.cargo/config.toml`
+    let crates_dir = config.crates_dir();
+    let crates_cargo_dir = crates_dir.join(".cargo");
+    if crates_cargo_dir.is_dir() {
+        let mut cargo_config = CargoConfig::load_from_dir(&crates_cargo_dir)?;
+        cargo_config.remove_patch(name);
+
+        // Write updated config, or clean up the .cargo dir if no patches remain
+        let toml_content = cargo_config.to_toml().unwrap_or_default();
+        if toml_content.trim().is_empty() {
+            // No more patches, remove the .cargo directory and README
+            utils::remove(&crates_cargo_dir)?;
+            let readme_path = crates_dir.join("README.md");
+            if readme_path.is_file() {
+                utils::remove(&readme_path)?;
+            }
+        } else {
+            cargo_config.write_to_dir(&crates_cargo_dir)?;
+            // Regenerate the usage guide
+            generate_crate_usage_guide(crates_dir, &cargo_config)?;
+        }
+    }
+
+    // Also clean up legacy patch from global cargo config if it exists
+    // (for backward compatibility with installations done before this change)
+    let mut global_cargo_config = CargoConfig::load_from_dir(config.cargo_home())?;
+    global_cargo_config
         .remove_patch(name)
         .write_to_dir(config.cargo_home())?;
 
+    Ok(())
+}
+
+/// Generate a README.md file in the `crates/` directory to guide users on how
+/// to use the installed crates in their own projects.
+///
+/// Instead of polluting the global `CARGO_HOME/config.toml` with `[patch.crates-io]`,
+/// this generates a user-friendly guide showing how to add the patch configuration
+/// to individual project's `Cargo.toml` or `.cargo/config.toml`.
+fn generate_crate_usage_guide(crates_dir: &Path, cargo_config: &CargoConfig) -> Result<()> {
+    let patch_toml = cargo_config.to_toml().unwrap_or_default();
+    if patch_toml.trim().is_empty() {
+        return Ok(());
+    }
+
+    let readme_content = format!(
+        r#"# 已安装的 Crate 库 / Installed Crates
+
+此目录包含通过 Rust 安装管理器安装的第三方 crate 源代码。
+
+## 使用方法
+
+要在您的项目中使用这些 crate，请将以下 patch 配置添加到您**项目**的 `Cargo.toml` 文件末尾：
+
+```toml
+{patch_toml}```
+
+### 示例
+
+假设您要使用 `ylong_json`，步骤如下：
+
+1. 在您的项目 `Cargo.toml` 的 `[dependencies]` 中添加依赖：
+   ```toml
+   [dependencies]
+   ylong_json = "1.0.0"
+   ```
+
+2. 将上方的 `[patch.crates-io]` 配置复制到同一个 `Cargo.toml` 文件末尾。
+
+3. 运行 `cargo build` 即可。
+
+## 注意事项
+
+- patch 配置只需添加到您实际使用的项目中，不会影响其他项目。
+- 如果 `Cargo.lock` 中锁定了不同版本，请运行 `cargo update` 来更新。
+- 您只需复制您实际用到的 crate 对应的 patch 条目，无需全部复制。
+
+---
+
+# Installed Crates
+
+This directory contains third-party crate source code installed via Rust Installation Manager.
+
+## Usage
+
+To use these crates in your project, add the following patch configuration
+to the end of your **project's** `Cargo.toml`:
+
+```toml
+{patch_toml}```
+
+### Example
+
+For example, to use `ylong_json`:
+
+1. Add the dependency to your project's `[dependencies]` in `Cargo.toml`:
+   ```toml
+   [dependencies]
+   ylong_json = "1.0.0"
+   ```
+
+2. Copy the `[patch.crates-io]` section above to the end of the same `Cargo.toml`.
+
+3. Run `cargo build`.
+
+## Notes
+
+- The patch config only needs to be added to projects that actually use these crates.
+- If `Cargo.lock` has a different locked version, run `cargo update` to refresh.
+- You only need to copy the patch entries for crates you actually depend on.
+"#
+    );
+
+    let readme_path = crates_dir.join("README.md");
+    utils::write_file(readme_path, &readme_content, false)?;
     Ok(())
 }
 

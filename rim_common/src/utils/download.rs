@@ -111,9 +111,22 @@ impl DownloadOpt {
             warn!("{}", crate::tl!("insecure_download"));
         }
 
-        let resp = self
-            .client()?
-            .get(url.as_ref())
+        let mut req_builder = self.client()?.get(url.as_ref());
+
+        // Inject OBS signing headers if URL matches a configured rule
+        if let Some(cred) = build_config().find_obs_credential(url) {
+            let auth_headers = super::obs_sign::obs_auth_headers(
+                &cred.access_key,
+                &cred.secret_key,
+                "GET",
+                url,
+            )?;
+            for (k, v) in auth_headers {
+                req_builder = req_builder.header(&k, &v);
+            }
+        }
+
+        let resp = req_builder
             .send()
             .await
             .with_context(|| format!("failed to receive server response from '{url}'"))?;
@@ -329,6 +342,20 @@ async fn get_response_(
     resume_from: Option<u64>,
 ) -> Result<reqwest::Response> {
     let mut builder = client.get(url.as_ref());
+
+    // Inject OBS signing headers if URL matches a configured rule
+    if let Some(cred) = crate::build_config().find_obs_credential(url) {
+        let auth_headers = super::obs_sign::obs_auth_headers(
+            &cred.access_key,
+            &cred.secret_key,
+            "GET",
+            url,
+        )?;
+        for (k, v) in auth_headers {
+            builder = builder.header(&k, &v);
+        }
+    }
+
     if let Some(bytes) = resume_from {
         builder = builder.header(header::RANGE, format!("bytes={bytes}-"));
     }
