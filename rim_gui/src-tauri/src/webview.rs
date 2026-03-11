@@ -1,4 +1,5 @@
 use rim_common::exe;
+#[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
 /// Check that the platform's webview runtime is available before launching Tauri.
