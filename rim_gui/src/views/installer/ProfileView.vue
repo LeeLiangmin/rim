@@ -42,7 +42,7 @@
         </base-card>
       </div>
     </div>
-    <page-nav-buttons :backLabel="$t('back')" @back-clicked="routerBack" />
+    <page-nav-buttons />
   </div>
 </template>
 <script setup lang="ts">
@@ -50,7 +50,7 @@ import { useCustomRouter } from '@/router';
 import { installConf } from '@/utils';
 import { handleRestrictedComponents } from '@/utils/common';
 
-const { routerPush, routerBack } = useCustomRouter();
+const { routerPush } = useCustomRouter();
 
 function selectProfile(name: string) {
   switch (name) {

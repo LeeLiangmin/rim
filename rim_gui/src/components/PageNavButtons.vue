@@ -1,9 +1,10 @@
 <template>
-    <div flex="~ items-center" position="fixed" bottom="7%" :class="['nav-buttons-container', { 'manager-mode': isManagerMode }]">
-      <div v-if="backLabel" :class="['button-wrapper', 'cancel-button-wrapper', { 'manager-mode': isManagerMode }]" style="left: 0; transform: translateX(30%);" @click="backClicked">
+    <div :class="['nav-buttons-container', { 'manager-mode': isManagerMode }]">
+      <div v-if="backLabel" :class="['button-wrapper', { 'manager-mode': isManagerMode }]" @click="backClicked">
         <base-button theme="secondary" @click.stop="backClicked">{{ backLabel }}</base-button>
       </div>
-      <div v-if="nextLabel" :class="['button-wrapper', { 'manager-mode': isManagerMode }]" style="right: 0; transform: translateX(-30%);" @click="nextClicked">
+      <div class="spacer"></div>
+      <div v-if="nextLabel" :class="['button-wrapper', { 'manager-mode': isManagerMode }]" @click="nextClicked">
         <base-button theme="primary" @click.stop="nextClicked">{{ nextLabel }}</base-button>
       </div>
     </div>
@@ -33,34 +34,42 @@ const nextClicked = () => emit('next-clicked');
 
 <style scoped>
 .nav-buttons-container {
-  /* Ensure container doesn't block clicks */
+  position: fixed;
+  bottom: 7%;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  /* Ensure container doesn't block clicks on elements beneath it */
   pointer-events: none;
+  z-index: 10;
+}
+
+.spacer {
+  flex: 1;
 }
 
 .button-wrapper {
-  position: fixed;
-  bottom: 7%;
-  /* Re-enable pointer events for button wrapper */
+  /* Re-enable pointer events for button area */
   pointer-events: auto;
-  /* Ensure wrapper doesn't interfere with layout */
-  z-index: 10;
-  /* Ensure wrapper captures clicks */
   display: flex;
   align-items: center;
 }
 
+/* Left button offset */
+.button-wrapper:first-child {
+  margin-left: 8%;
+}
+
+/* Right button offset */
+.button-wrapper:last-child {
+  margin-right: 8%;
+}
+
 /* Enhanced click area only for manager mode */
 .button-wrapper.manager-mode {
-  /* Expand clickable area for better sensitivity - add padding around button */
-  padding: 8px 6px; /* Increased top/bottom padding (8px) extends clickable area significantly */
-  /* Make entire wrapper clickable for better sensitivity */
+  padding: 8px 6px;
   cursor: pointer;
-}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
-/* Align cancel button with uninstall button in manager mode */
-.cancel-button-wrapper.manager-mode {
-  /* Adjust cancel button position downward to align with uninstall button */
-  bottom: calc(7% - 8px); /* Compensate for padding to align button centers */
 }
 
 /* Installer mode: no extra padding, keep original behavior */
