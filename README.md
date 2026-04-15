@@ -1,19 +1,8 @@
-# R.I.M (Rust Installation Manager)
+# 旋武发行版
 
-[![user_guide](https://img.shields.io/badge/User_Guide-xuanwu-blue)]([https://j-zhengli.github.io/rim](https://xuanwu.beta.atomgit.com/guide/))
-[![dev_docs](https://img.shields.io/badge/API_Doc-rustdoc-orange)](https://j-zhengli.github.io/rim)
+旋武发行版项目，支撑旋武发行版的集成发布，并实现发行版一站式安装管理工具。安装管理工具支持图形化用户接口 (**GUI**) 以及命令行接口 (**CLI**)。
 
-An interactive program to install & manage Rust toolchain and third-party tools, supports graphical user interface (**GUI**) and a basic commandline interface (**CLI**).
-
-## Demo
-
-### GUI
-
-<img src="./resources/images/windows-install-demo.gif" />
-
-### CLI
-
-<img src="./resources/images/linux-cli-install-demo.gif" />
+安装及使用请见旋武官网发行版[下载页面](https://xuanwu.openatom.org/download/)。
 
 ## How does it work?
 
