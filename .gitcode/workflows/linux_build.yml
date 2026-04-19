@@ -12,8 +12,6 @@ jobs:
 
     env:
       EDITION: community
-      DIST_TARGET: x86_64-unknown-linux-gnu
-      MUSL_TARGET: x86_64-unknown-linux-musl
       RUSTUP_DIST_SERVER: https://mirror.xuanwu.openatom.cn
       RUSTUP_UPDATE_ROOT: https://mirror.xuanwu.openatom.cn/rustup
 
@@ -62,7 +60,7 @@ jobs:
           . "$HOME/.cargo/env"
           rustup toolchain install stable --profile minimal
           rustup default stable
-          rustup target add "$MUSL_TARGET" || echo "WARN: musl target add failed"
+          rustup target add x86_64-unknown-linux-musl || echo "WARN: musl target add failed"
           rustc --version
           cargo --version
 
@@ -96,15 +94,17 @@ jobs:
           cargo run -p rim_dev -- --help >/dev/null
           if command -v musl-gcc >/dev/null 2>&1; then
             echo "=== Building with musl target ==="
-            cargo run -p rim_dev -- dist --cli -b --target "$MUSL_TARGET" --for "$DIST_TARGET"
+            cargo run -p rim_dev -- dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
           else
             echo "=== Building with gnu target ==="
-            cargo run -p rim_dev -- dist --cli -b --for "$DIST_TARGET"
+            cargo run -p rim_dev -- dist --cli -b --for x86_64-unknown-linux-gnu
           fi
 
       - name: Validate and list build artifacts
         run: |
           set -e
           cd repo_workspace
-          test -d "dist/$DIST_TARGET"
-          find "dist/$DIST_TARGET" -maxdepth 2 -type f -print
+          ls -al dist || true
+          ls -al dist/x86_64-unknown-linux-gnu || true
+          test -d dist/x86_64-unknown-linux-gnu
+          find dist/x86_64-unknown-linux-gnu -maxdepth 2 -type f -print
