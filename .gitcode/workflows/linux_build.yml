@@ -13,6 +13,8 @@ jobs:
     env:
       EDITION: community
       REPO_DIR: repo_workspace
+      RUSTUP_DIST_SERVER: https://mirror.xuanwu.openatom.cn
+      RUSTUP_UPDATE_ROOT: https://mirror.xuanwu.openatom.cn/rustup
 
     steps:
       - uses: checkout-action@0.0.1
@@ -63,17 +65,41 @@ jobs:
           rustc --version
           cargo --version
 
+      - name: Configure cargo mirror
+        run: |
+          cd "$REPO_DIR"
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          [alias]
+          dev = "run -p rim_dev --"
+
+          [source.crates-io]
+          replace-with = 'xuanwu-sparse'
+
+          [source.xuanwu]
+          registry = "https://mirror.xuanwu.openatom.cn/crates.io-index"
+
+          [source.xuanwu-sparse]
+          registry = "sparse+https://mirror.xuanwu.openatom.cn/index/"
+
+          [registries.xuanwu]
+          index = "https://mirror.xuanwu.openatom.cn/crates.io-index"
+
+          [net]
+          git-fetch-with-cli = true
+          EOF
+
       - name: Build CLI
         run: |
           . "$HOME/.cargo/env"
           cd "$REPO_DIR"
-          cargo dev --help >/dev/null
+          cargo run -p rim_dev -- --help >/dev/null
           if command -v musl-gcc >/dev/null 2>&1; then
             echo "=== Building with musl target ==="
-            cargo dev dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
+            cargo run -p rim_dev -- dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
           else
             echo "=== Building with gnu target ==="
-            cargo dev dist --cli -b --for x86_64-unknown-linux-gnu
+            cargo run -p rim_dev -- dist --cli -b --for x86_64-unknown-linux-gnu
           fi
 
       - name: Validate and list build artifacts
