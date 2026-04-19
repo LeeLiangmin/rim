@@ -12,6 +12,7 @@ jobs:
 
     env:
       EDITION: community
+      REPO_DIR: repo_workspace
 
     steps:
       - uses: checkout-action@0.0.1
@@ -28,7 +29,13 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          yum install -y gcc gcc-c++ make perl pkgconfig openssl-devel xz-devel curl wget || true
+          if command -v dnf >/dev/null 2>&1; then
+            dnf install -y gcc gcc-c++ make perl pkgconfig openssl-devel xz-devel curl wget || echo "WARN: dnf install failed, continue with preinstalled tools"
+          elif command -v yum >/dev/null 2>&1; then
+            yum install -y gcc gcc-c++ make perl pkgconfig openssl-devel xz-devel curl wget || echo "WARN: yum install failed, continue with preinstalled tools"
+          else
+            echo "WARN: no supported package manager found, continue with preinstalled tools"
+          fi
 
       - name: Verify dependencies
         run: |
@@ -48,8 +55,10 @@ jobs:
 
       - name: Install Rust
         run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           . "$HOME/.cargo/env"
+          rustup toolchain install stable --profile minimal
+          rustup default stable
           rustup target add x86_64-unknown-linux-musl || echo "WARN: musl target add failed"
           rustc --version
           cargo --version
@@ -57,7 +66,9 @@ jobs:
       - name: Build CLI
         run: |
           . "$HOME/.cargo/env"
-          if which musl-gcc &> /dev/null; then
+          cd "$REPO_DIR"
+          cargo dev --help >/dev/null
+          if command -v musl-gcc >/dev/null 2>&1; then
             echo "=== Building with musl target ==="
             cargo dev dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
           else
@@ -65,6 +76,8 @@ jobs:
             cargo dev dist --cli -b --for x86_64-unknown-linux-gnu
           fi
 
-      - name: List build artifacts
+      - name: Validate and list build artifacts
         run: |
-          ls -alR dist/ || echo "No dist directory found"
+          cd "$REPO_DIR"
+          test -d dist
+          find dist -maxdepth 3 -type f -print
