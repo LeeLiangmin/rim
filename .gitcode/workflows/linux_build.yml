@@ -1,0 +1,29 @@
+name: Linux System Check
+
+on:
+  push:
+    branches: [ "llm" ]
+  pull_request:
+    branches: [ "llm" ]
+
+jobs:
+  system-check:
+    runs-on: euleros-2.10.1
+
+    steps:
+      - uses: checkout-action@0.0.1
+
+      - name: Check system
+        run: |
+          uname -a
+          cat /etc/os-release
+
+      - name: Check Rust
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Check Node.js
+        run: |
+          node --version
+          npm --version
