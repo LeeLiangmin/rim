@@ -1,4 +1,4 @@
-name: Linux System Check
+name: Linux CLI Build
 
 on:
   push:
@@ -7,8 +7,11 @@ on:
     branches: [ "llm" ]
 
 jobs:
-  system-check:
+  build-cli:
     runs-on: ubuntu:22.04
+
+    env:
+      EDITION: community
 
     steps:
       - uses: checkout-action@0.0.1
@@ -23,17 +26,59 @@ jobs:
           uname -a
           cat /etc/os-release
 
+      - name: Install system dependencies
+        run: |
+          if command -v yum &> /dev/null; then
+            echo "=== Using yum (EulerOS/CentOS) ==="
+            yum install -y gcc gcc-c++ make perl pkgconfig openssl-devel xz-devel curl wget git || true
+            # 检查 musl-tools 是否可用
+            yum install -y musl-tools 2>/dev/null || echo "WARN: musl-tools not available, will use gnu target"
+          elif command -v apt-get &> /dev/null; then
+            echo "=== Using apt-get (Ubuntu/Debian) ==="
+            apt-get update -y
+            apt-get install -y build-essential pkg-config libssl-dev liblzma-dev musl-tools curl wget git perl
+          fi
+
+      - name: Verify dependencies
+        run: |
+          echo "=== Checking C compiler ==="
+          gcc --version || cc --version || echo "FAIL: no C compiler"
+          echo "=== Checking make ==="
+          make --version || echo "FAIL: no make"
+          echo "=== Checking perl ==="
+          perl --version || echo "FAIL: no perl"
+          echo "=== Checking pkg-config ==="
+          pkg-config --version || echo "FAIL: no pkg-config"
+          echo "=== Checking openssl headers ==="
+          pkg-config --exists openssl && echo "openssl OK" || echo "WARN: openssl not found via pkg-config"
+          echo "=== Checking musl-gcc ==="
+          which musl-gcc && echo "musl-gcc OK" || echo "WARN: musl-gcc not available, will use gnu target"
+          echo "=== Checking node ==="
+          node --version
+          npm --version
+
       - name: Install Rust
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Check Rust
-        run: |
+          . "$HOME/.cargo/env"
+          # 尝试添加 musl target，失败则跳过
+          rustup target add x86_64-unknown-linux-musl || echo "WARN: musl target add failed"
           rustc --version
           cargo --version
+          rustup show
 
-      - name: Check Node.js
+      - name: Build CLI
         run: |
-          node --version
-          npm --version
+          . "$HOME/.cargo/env"
+          # 优先尝试 musl target，失败则回退到 gnu
+          if which musl-gcc &> /dev/null; then
+            echo "=== Building with musl target ==="
+            cargo dev dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
+          else
+            echo "=== Building with gnu target (musl not available) ==="
+            cargo dev dist --cli -b --for x86_64-unknown-linux-gnu
+          fi
+
+      - name: List build artifacts
+        run: |
+          ls -alR dist/ || echo "No dist directory found"
