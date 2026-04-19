@@ -8,15 +8,25 @@ on:
 
 jobs:
   system-check:
-    runs-on: euleros-2.10.1
+    runs-on: ubuntu:22.04
 
     steps:
       - uses: checkout-action@0.0.1
+
+      - name: Setup Node.js
+        uses: setup-node@0.0.1
+        with:
+          node-version: '20.10.0'
 
       - name: Check system
         run: |
           uname -a
           cat /etc/os-release
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Check Rust
         run: |
