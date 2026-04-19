@@ -12,7 +12,6 @@ jobs:
 
     env:
       EDITION: community
-      REPO_DIR: repo_workspace
       RUSTUP_DIST_SERVER: https://mirror.xuanwu.openatom.cn
       RUSTUP_UPDATE_ROOT: https://mirror.xuanwu.openatom.cn/rustup
 
@@ -67,9 +66,8 @@ jobs:
 
       - name: Configure cargo mirror
         run: |
-          cd "$REPO_DIR"
-          mkdir -p .cargo
-          cat > .cargo/config.toml <<'EOF'
+          mkdir -p repo_workspace/.cargo
+          cat > repo_workspace/.cargo/config.toml <<'EOF'
           [alias]
           dev = "run -p rim_dev --"
 
@@ -92,18 +90,16 @@ jobs:
       - name: Build CLI
         run: |
           . "$HOME/.cargo/env"
-          cd "$REPO_DIR"
-          cargo run -p rim_dev -- --help >/dev/null
+          cargo run --manifest-path repo_workspace/Cargo.toml -p rim_dev -- --help >/dev/null
           if command -v musl-gcc >/dev/null 2>&1; then
             echo "=== Building with musl target ==="
-            cargo run -p rim_dev -- dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
+            cargo run --manifest-path repo_workspace/Cargo.toml -p rim_dev -- dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
           else
             echo "=== Building with gnu target ==="
-            cargo run -p rim_dev -- dist --cli -b --for x86_64-unknown-linux-gnu
+            cargo run --manifest-path repo_workspace/Cargo.toml -p rim_dev -- dist --cli -b --for x86_64-unknown-linux-gnu
           fi
 
       - name: Validate and list build artifacts
         run: |
-          cd "$REPO_DIR"
-          test -d dist
-          find dist -maxdepth 3 -type f -print
+          test -d repo_workspace/dist
+          find repo_workspace/dist -maxdepth 3 -type f -print
