@@ -12,6 +12,9 @@ jobs:
 
     env:
       EDITION: community
+      REPO_DIR: repo_workspace
+      DIST_TARGET: x86_64-unknown-linux-gnu
+      MUSL_TARGET: x86_64-unknown-linux-musl
       RUSTUP_DIST_SERVER: https://mirror.xuanwu.openatom.cn
       RUSTUP_UPDATE_ROOT: https://mirror.xuanwu.openatom.cn/rustup
 
@@ -25,29 +28,24 @@ jobs:
 
       - name: Check system
         run: |
+          set -e
           uname -a
           cat /etc/os-release
+          pwd
+          ls -al
+          test -f "$REPO_DIR/Cargo.toml"
 
-      - name: Install system dependencies
+      - name: Verify preinstalled dependencies
         run: |
-          if command -v dnf >/dev/null 2>&1; then
-            dnf install -y gcc gcc-c++ make perl pkgconfig openssl-devel xz-devel curl wget || echo "WARN: dnf install failed, continue with preinstalled tools"
-          elif command -v yum >/dev/null 2>&1; then
-            yum install -y gcc gcc-c++ make perl pkgconfig openssl-devel xz-devel curl wget || echo "WARN: yum install failed, continue with preinstalled tools"
-          else
-            echo "WARN: no supported package manager found, continue with preinstalled tools"
-          fi
-
-      - name: Verify dependencies
-        run: |
+          set -e
           echo "=== C compiler ==="
-          gcc --version || echo "FAIL: no gcc"
+          gcc --version
           echo "=== make ==="
-          make --version || echo "FAIL: no make"
+          make --version
           echo "=== perl ==="
-          perl --version || echo "FAIL: no perl"
+          perl --version
           echo "=== pkg-config ==="
-          pkg-config --version || echo "FAIL: no pkg-config"
+          pkg-config --version
           echo "=== openssl ==="
           pkg-config --exists openssl && echo "openssl OK" || echo "WARN: openssl not found via pkg-config"
           echo "=== node ==="
@@ -56,21 +54,22 @@ jobs:
 
       - name: Install Rust
         run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          set -e
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          fi
           . "$HOME/.cargo/env"
           rustup toolchain install stable --profile minimal
           rustup default stable
-          rustup target add x86_64-unknown-linux-musl || echo "WARN: musl target add failed"
+          rustup target add "$MUSL_TARGET" || echo "WARN: musl target add failed"
           rustc --version
           cargo --version
 
       - name: Configure cargo mirror
         run: |
-          mkdir -p repo_workspace/.cargo
-          cat > repo_workspace/.cargo/config.toml <<'EOF'
-          [alias]
-          dev = "run -p rim_dev --"
-
+          set -e
+          mkdir -p "$REPO_DIR/.cargo"
+          cat > "$REPO_DIR/.cargo/config.toml" <<'EOF'
           [source.crates-io]
           replace-with = 'xuanwu-sparse'
 
@@ -89,17 +88,21 @@ jobs:
 
       - name: Build CLI
         run: |
+          set -e
           . "$HOME/.cargo/env"
-          cargo run --manifest-path repo_workspace/Cargo.toml -p rim_dev -- --help >/dev/null
+          cd "$REPO_DIR"
+          cargo run -p rim_dev -- --help >/dev/null
           if command -v musl-gcc >/dev/null 2>&1; then
             echo "=== Building with musl target ==="
-            cargo run --manifest-path repo_workspace/Cargo.toml -p rim_dev -- dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
+            cargo run -p rim_dev -- dist --cli -b --target "$MUSL_TARGET" --for "$DIST_TARGET"
           else
             echo "=== Building with gnu target ==="
-            cargo run --manifest-path repo_workspace/Cargo.toml -p rim_dev -- dist --cli -b --for x86_64-unknown-linux-gnu
+            cargo run -p rim_dev -- dist --cli -b --for "$DIST_TARGET"
           fi
 
       - name: Validate and list build artifacts
         run: |
-          test -d repo_workspace/dist
-          find repo_workspace/dist -maxdepth 3 -type f -print
+          set -e
+          cd "$REPO_DIR"
+          test -d "dist/$DIST_TARGET"
+          find "dist/$DIST_TARGET" -maxdepth 2 -type f -print
