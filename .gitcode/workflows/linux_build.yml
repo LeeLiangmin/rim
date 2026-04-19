@@ -12,7 +12,6 @@ jobs:
 
     env:
       EDITION: community
-      REPO_DIR: repo_workspace
       DIST_TARGET: x86_64-unknown-linux-gnu
       MUSL_TARGET: x86_64-unknown-linux-musl
       RUSTUP_DIST_SERVER: https://mirror.xuanwu.openatom.cn
@@ -29,15 +28,16 @@ jobs:
       - name: Check system
         run: |
           set -e
+          cd repo_workspace
           uname -a
           cat /etc/os-release
           pwd
-          ls -al
-          test -f "$REPO_DIR/Cargo.toml"
+          test -f Cargo.toml
 
       - name: Verify preinstalled dependencies
         run: |
           set -e
+          cd repo_workspace
           echo "=== C compiler ==="
           gcc --version
           echo "=== make ==="
@@ -55,6 +55,7 @@ jobs:
       - name: Install Rust
         run: |
           set -e
+          cd repo_workspace
           if ! command -v cargo >/dev/null 2>&1; then
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           fi
@@ -68,8 +69,9 @@ jobs:
       - name: Configure cargo mirror
         run: |
           set -e
-          mkdir -p "$REPO_DIR/.cargo"
-          cat > "$REPO_DIR/.cargo/config.toml" <<'EOF'
+          cd repo_workspace
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
           [source.crates-io]
           replace-with = 'xuanwu-sparse'
 
@@ -89,8 +91,8 @@ jobs:
       - name: Build CLI
         run: |
           set -e
+          cd repo_workspace
           . "$HOME/.cargo/env"
-          cd "$REPO_DIR"
           cargo run -p rim_dev -- --help >/dev/null
           if command -v musl-gcc >/dev/null 2>&1; then
             echo "=== Building with musl target ==="
@@ -103,6 +105,6 @@ jobs:
       - name: Validate and list build artifacts
         run: |
           set -e
-          cd "$REPO_DIR"
+          cd repo_workspace
           test -d "dist/$DIST_TARGET"
           find "dist/$DIST_TARGET" -maxdepth 2 -type f -print
