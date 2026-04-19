@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-cli:
-    runs-on: ubuntu:22.04
+    runs-on: euleros-2.10.1
 
     env:
       EDITION: community
@@ -28,32 +28,21 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          if command -v yum &> /dev/null; then
-            echo "=== Using yum (EulerOS/CentOS) ==="
-            yum install -y gcc gcc-c++ make perl pkgconfig openssl-devel xz-devel curl wget git || true
-            # 检查 musl-tools 是否可用
-            yum install -y musl-tools 2>/dev/null || echo "WARN: musl-tools not available, will use gnu target"
-          elif command -v apt-get &> /dev/null; then
-            echo "=== Using apt-get (Ubuntu/Debian) ==="
-            apt-get update -y
-            apt-get install -y build-essential pkg-config libssl-dev liblzma-dev musl-tools curl wget git perl
-          fi
+          yum install -y gcc gcc-c++ make perl pkgconfig openssl-devel xz-devel curl wget || true
 
       - name: Verify dependencies
         run: |
-          echo "=== Checking C compiler ==="
-          gcc --version || cc --version || echo "FAIL: no C compiler"
-          echo "=== Checking make ==="
+          echo "=== C compiler ==="
+          gcc --version || echo "FAIL: no gcc"
+          echo "=== make ==="
           make --version || echo "FAIL: no make"
-          echo "=== Checking perl ==="
+          echo "=== perl ==="
           perl --version || echo "FAIL: no perl"
-          echo "=== Checking pkg-config ==="
+          echo "=== pkg-config ==="
           pkg-config --version || echo "FAIL: no pkg-config"
-          echo "=== Checking openssl headers ==="
+          echo "=== openssl ==="
           pkg-config --exists openssl && echo "openssl OK" || echo "WARN: openssl not found via pkg-config"
-          echo "=== Checking musl-gcc ==="
-          which musl-gcc && echo "musl-gcc OK" || echo "WARN: musl-gcc not available, will use gnu target"
-          echo "=== Checking node ==="
+          echo "=== node ==="
           node --version
           npm --version
 
@@ -61,21 +50,18 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           . "$HOME/.cargo/env"
-          # 尝试添加 musl target，失败则跳过
           rustup target add x86_64-unknown-linux-musl || echo "WARN: musl target add failed"
           rustc --version
           cargo --version
-          rustup show
 
       - name: Build CLI
         run: |
           . "$HOME/.cargo/env"
-          # 优先尝试 musl target，失败则回退到 gnu
           if which musl-gcc &> /dev/null; then
             echo "=== Building with musl target ==="
             cargo dev dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
           else
-            echo "=== Building with gnu target (musl not available) ==="
+            echo "=== Building with gnu target ==="
             cargo dev dist --cli -b --for x86_64-unknown-linux-gnu
           fi
 
