@@ -108,3 +108,70 @@ jobs:
           ls -al dist/x86_64-unknown-linux-gnu || true
           test -d dist/x86_64-unknown-linux-gnu
           find dist/x86_64-unknown-linux-gnu -maxdepth 2 -type f -print
+
+      - name: Upload to GitCode Release
+        run: |
+          set -euo pipefail
+          cd repo_workspace
+
+          # TODO: 正式使用时应通过 CI 环境变量注入，不要硬编码
+          ACCESS_TOKEN="5yyPyAvBcv2UVTog37nEe378"
+
+          RELEASE_TAG="dev"
+          OWNER="xuanwu"
+          REPO="custom-rust-dist"
+          API_BASE="https://api.gitcode.com/api/v5/repos/${OWNER}/${REPO}"
+          UPLOAD_DIR="dist/x86_64-unknown-linux-gnu"
+
+          echo "=== Step 1: Create release (tag=${RELEASE_TAG}) ==="
+          curl -sS -X POST \
+            "${API_BASE}/releases?access_token=${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"${RELEASE_TAG}\",\"name\":\"${RELEASE_TAG}\",\"body\":\"Auto release from linux-build CI\"}" \
+            || echo "release may already exist, continuing..."
+
+          echo ""
+          echo "=== Step 2: Upload artifacts from ${UPLOAD_DIR} ==="
+          find "$UPLOAD_DIR" -maxdepth 1 -type f | while read -r file; do
+            filename=$(basename "$file")
+            echo ""
+            echo ">>> [${filename}] getting upload url..."
+
+            UPLOAD_RESP=$(curl -sS \
+              "${API_BASE}/releases/${RELEASE_TAG}/upload_url?access_token=${ACCESS_TOKEN}&file_name=${filename}")
+
+            echo ">>> [${filename}] upload_url response: $UPLOAD_RESP"
+
+            # 用 sed 提取 url 字段
+            UPLOAD_URL=$(echo "$UPLOAD_RESP" | sed -n 's/.*"url" *: *"\([^"]*\)".*/\1/p')
+
+            if [ -z "$UPLOAD_URL" ]; then
+              echo "ERROR: failed to get upload url for $filename"
+              continue
+            fi
+
+            # 从 headers 对象提取请求头，写入 curl 配置文件
+            CURL_CFG="/tmp/curl_headers.cfg"
+            : > "$CURL_CFG"
+            HEADERS_BLOCK=$(echo "$UPLOAD_RESP" | sed 's/.*"headers" *: *{//;s/}.*//')
+            if [ -n "$HEADERS_BLOCK" ]; then
+              echo "$HEADERS_BLOCK" | tr ',' '\n' | \
+                sed -n 's/^ *"\([^"]*\)" *: *"\([^"]*\)" *$/header = "\1: \2"/p' >> "$CURL_CFG"
+            fi
+
+            echo ">>> [${filename}] uploading to pre-signed url..."
+            HTTP_CODE=$(curl -sS -o /tmp/upload_body.txt -w "%{http_code}" \
+              -K "$CURL_CFG" \
+              -X PUT "$UPLOAD_URL" \
+              --upload-file "$file")
+
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo ">>> [${filename}] uploaded OK (HTTP ${HTTP_CODE})"
+            else
+              echo ">>> [${filename}] upload FAILED (HTTP ${HTTP_CODE})"
+              echo ">>> response: $(cat /tmp/upload_body.txt 2>/dev/null)"
+            fi
+          done
+
+          echo ""
+          echo "=== Done ==="
