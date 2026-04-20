@@ -54,18 +54,10 @@ jobs:
 
           echo ""
           echo "=== Step 1: Create release (tag=${RELEASE_TAG}) ==="
-          CREATE_BODY=$(python3 -c "
-          import json
-          print(json.dumps({
-              'tag_name': '${RELEASE_TAG}',
-              'name': '${RELEASE_TAG}',
-              'body': 'Upload test from upload.yml'
-          }))")
-
           curl -sS -X POST \
             "${API_BASE}/releases?access_token=${ACCESS_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "$CREATE_BODY" \
+            -d "{\"tag_name\":\"${RELEASE_TAG}\",\"name\":\"${RELEASE_TAG}\",\"body\":\"Upload test from upload.yml\"}" \
             || echo "release may already exist, continuing..."
 
           echo ""
@@ -78,7 +70,10 @@ jobs:
             UPLOAD_RESP=$(curl -sS \
               "${API_BASE}/releases/${RELEASE_TAG}/upload_url?access_token=${ACCESS_TOKEN}&file_name=${filename}")
 
-            UPLOAD_URL=$(echo "$UPLOAD_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('url',''))")
+            echo ">>> [${filename}] upload_url response: $UPLOAD_RESP"
+
+            # 用 sed 提取 url 字段
+            UPLOAD_URL=$(echo "$UPLOAD_RESP" | sed -n 's/.*"url" *: *"\([^"]*\)".*/\1/p')
 
             if [ -z "$UPLOAD_URL" ]; then
               echo "ERROR: failed to get upload url for $filename"
@@ -86,11 +81,26 @@ jobs:
               continue
             fi
 
+            # 从 headers 对象提取请求头，写入 curl 配置文件
+            # API 返回格式: {"url":"...","headers":{"K1":"V1","K2":"V2"}}
+            CURL_CFG="/tmp/curl_headers.cfg"
+            : > "$CURL_CFG"
+            HEADERS_BLOCK=$(echo "$UPLOAD_RESP" | sed 's/.*"headers" *: *{//;s/}.*//')
+            if [ -n "$HEADERS_BLOCK" ]; then
+              echo "$HEADERS_BLOCK" | tr ',' '\n' | \
+                sed -n 's/^ *"\([^"]*\)" *: *"\([^"]*\)" *$/header = "\1: \2"/p' >> "$CURL_CFG"
+            fi
+
+            echo ">>> [${filename}] curl config:"
+            cat "$CURL_CFG"
+
             echo ">>> [${filename}] uploading to pre-signed url..."
-            HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" \
+            HTTP_CODE=$(curl -sS -o /tmp/upload_body.txt -w "%{http_code}" \
+              -K "$CURL_CFG" \
               -X PUT "$UPLOAD_URL" \
-              --upload-file "$file" \
-              -H "Content-Type: application/octet-stream")
+              --upload-file "$file")
+
+            echo ">>> [${filename}] upload response body: $(cat /tmp/upload_body.txt 2>/dev/null)"
 
             if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
               echo ">>> [${filename}] uploaded OK (HTTP ${HTTP_CODE})"
