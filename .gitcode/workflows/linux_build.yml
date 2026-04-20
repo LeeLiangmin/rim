@@ -91,7 +91,16 @@ jobs:
           set -e
           cd repo_workspace
           . "$HOME/.cargo/env"
-          cargo run -p rim_dev -- --help >/dev/null
+
+          # 从 workspace 排除 rim_gui，避免解析其 GitHub git 依赖（CI 环境访问 github.com 极慢）
+          sed -i 's|"rim_gui/src-tauri", ||' Cargo.toml
+          echo "workspace members after patch:"
+          grep -A5 '\[workspace\]' Cargo.toml | head -6
+
+          # 设置 git 超时兜底，防止网络问题导致长时间挂起
+          export GIT_HTTP_LOW_SPEED_LIMIT=1000
+          export GIT_HTTP_LOW_SPEED_TIME=30
+
           if command -v musl-gcc >/dev/null 2>&1; then
             echo "=== Building with musl target ==="
             cargo run -p rim_dev -- dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
