@@ -1,0 +1,109 @@
+name: Test GitCode Release Upload
+
+on:
+  push:
+    branches: [ "llm" ]
+
+jobs:
+  upload-text-file:
+    name: Upload generated text file to release
+    runs-on: euleros-2.10.1
+
+    steps:
+      - name: Checkout source code
+        uses: checkout-action@0.0.1
+
+      - name: Create test files
+        run: |
+          set -euo pipefail
+          cd repo_workspace
+          mkdir -p release-assets
+
+          cat > release-assets/test-upload-1.txt <<EOF
+          GitCode release upload test
+          workflow: upload.yml
+          created at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+
+          cat > release-assets/test-upload-2.txt <<EOF
+          Second test file
+          created at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+
+          echo "=== files to upload ==="
+          find release-assets -type f -print
+
+      - name: Create release and upload files
+        env:
+          # 优先使用 CI secrets；若 GitCode 不支持 secrets 语法，
+          # 可在流水线环境变量中手动配置 GITCODE_TOKEN
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd repo_workspace
+
+          if [ -z "${GITCODE_TOKEN:-}" ]; then
+            echo "GITCODE_TOKEN is not set. Configure it in CI secrets or pipeline env vars." >&2
+            exit 1
+          fi
+
+          # 固定 tag 用于试验
+          RELEASE_TAG="dev"
+          OWNER="xuanwu"
+          REPO="custom-rust-dist"
+          API_BASE="https://api.gitcode.com/api/v5/repos/${OWNER}/${REPO}"
+          UPLOAD_DIR="release-assets"
+
+          echo "owner: $OWNER"
+          echo "repo: $REPO"
+          echo "tag: $RELEASE_TAG"
+
+          echo ""
+          echo "=== Step 1: Create release (tag=${RELEASE_TAG}) ==="
+          CREATE_BODY=$(python3 -c "
+          import json
+          print(json.dumps({
+              'tag_name': '${RELEASE_TAG}',
+              'name': '${RELEASE_TAG}',
+              'body': 'Upload test from upload.yml'
+          }))")
+
+          curl -sS -X POST \
+            "${API_BASE}/releases?access_token=${GITCODE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$CREATE_BODY" \
+            || echo "release may already exist, continuing..."
+
+          echo ""
+          echo "=== Step 2: Upload files from ${UPLOAD_DIR} ==="
+          find "$UPLOAD_DIR" -maxdepth 1 -type f | while read -r file; do
+            filename=$(basename "$file")
+            echo ""
+            echo ">>> [${filename}] getting upload url..."
+
+            UPLOAD_RESP=$(curl -sS \
+              "${API_BASE}/releases/${RELEASE_TAG}/upload_url?access_token=${GITCODE_TOKEN}&file_name=${filename}")
+
+            UPLOAD_URL=$(echo "$UPLOAD_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('url',''))")
+
+            if [ -z "$UPLOAD_URL" ]; then
+              echo "ERROR: failed to get upload url for $filename"
+              echo "Response: $UPLOAD_RESP"
+              continue
+            fi
+
+            echo ">>> [${filename}] uploading to pre-signed url..."
+            HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" \
+              -X PUT "$UPLOAD_URL" \
+              --upload-file "$file" \
+              -H "Content-Type: application/octet-stream")
+
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo ">>> [${filename}] uploaded OK (HTTP ${HTTP_CODE})"
+            else
+              echo ">>> [${filename}] upload FAILED (HTTP ${HTTP_CODE})"
+            fi
+          done
+
+          echo ""
+          echo "=== Done ==="
