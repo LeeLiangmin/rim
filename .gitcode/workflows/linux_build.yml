@@ -61,6 +61,7 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup target add x86_64-unknown-linux-musl || echo "WARN: musl target add failed"
+          rustup target add aarch64-unknown-linux-gnu || echo "WARN: aarch64 gnu target add failed"
           rustc --version
           cargo --version
 
@@ -69,7 +70,7 @@ jobs:
           set -e
           cd repo_workspace
           mkdir -p .cargo
-          cat > .cargo/config.toml <<'EOF'
+          cat > .cargo/config.toml <<'CARGO_EOF'
           [source.crates-io]
           replace-with = 'xuanwu-sparse'
 
@@ -84,7 +85,7 @@ jobs:
 
           [net]
           git-fetch-with-cli = true
-          EOF
+          CARGO_EOF
 
       - name: Build CLI
         run: |
@@ -102,12 +103,15 @@ jobs:
           export GIT_HTTP_LOW_SPEED_TIME=30
 
           if command -v musl-gcc >/dev/null 2>&1; then
-            echo "=== Building with musl target ==="
+            echo "=== Building x86_64 with musl target ==="
             cargo run -p rim_dev -- dist --cli -b --target x86_64-unknown-linux-musl --for x86_64-unknown-linux-gnu
           else
-            echo "=== Building with gnu target ==="
+            echo "=== Building x86_64 with gnu target ==="
             cargo run -p rim_dev -- dist --cli -b --for x86_64-unknown-linux-gnu
           fi
+
+          echo "=== Building aarch64 with gnu target ==="
+          cargo run -p rim_dev -- dist --cli -b --target aarch64-unknown-linux-gnu --for aarch64-unknown-linux-gnu
 
       - name: Validate and list build artifacts
         run: |
@@ -115,72 +119,50 @@ jobs:
           cd repo_workspace
           ls -al dist || true
           ls -al dist/x86_64-unknown-linux-gnu || true
+          ls -al dist/aarch64-unknown-linux-gnu || true
           test -d dist/x86_64-unknown-linux-gnu
+          test -d dist/aarch64-unknown-linux-gnu
           find dist/x86_64-unknown-linux-gnu -maxdepth 2 -type f -print
+          find dist/aarch64-unknown-linux-gnu -maxdepth 2 -type f -print
+
+      - name: Install Python dependencies for release script
+        run: |
+          set -e
+          pip3 install --quiet httpx
 
       - name: Upload to GitCode Release
         run: |
           set -euo pipefail
           cd repo_workspace
 
-          # TODO: 正式使用时应通过 CI 环境变量注入，不要硬编码
           ACCESS_TOKEN="5yyPyAvBcv2UVTog37nEe378"
 
           RELEASE_TAG="dev"
           OWNER="xuanwu"
           REPO="custom-rust-dist"
-          API_BASE="https://api.gitcode.com/api/v5/repos/${OWNER}/${REPO}"
-          UPLOAD_DIR="dist/x86_64-unknown-linux-gnu"
+          export GITCODE_TOKEN="$ACCESS_TOKEN"
+          export GITCODE_OWNER="$OWNER"
+          export GITCODE_REPO="$REPO"
 
-          echo "=== Step 1: Create release (tag=${RELEASE_TAG}) ==="
-          curl -sS -X POST \
-            "${API_BASE}/releases?access_token=${ACCESS_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{\"tag_name\":\"${RELEASE_TAG}\",\"name\":\"${RELEASE_TAG}\",\"body\":\"Auto release from linux-build CI\"}" \
-            || echo "release may already exist, continuing..."
-
-          echo ""
-          echo "=== Step 2: Upload artifacts from ${UPLOAD_DIR} ==="
-          find "$UPLOAD_DIR" -maxdepth 1 -type f | while read -r file; do
-            filename=$(basename "$file")
-            echo ""
-            echo ">>> [${filename}] getting upload url..."
-
-            UPLOAD_RESP=$(curl -sS \
-              "${API_BASE}/releases/${RELEASE_TAG}/upload_url?access_token=${ACCESS_TOKEN}&file_name=${filename}")
-
-            echo ">>> [${filename}] upload_url response: $UPLOAD_RESP"
-
-            # 用 sed 提取 url 字段
-            UPLOAD_URL=$(echo "$UPLOAD_RESP" | sed -n 's/.*"url" *: *"\([^"]*\)".*/\1/p')
-
-            if [ -z "$UPLOAD_URL" ]; then
-              echo "ERROR: failed to get upload url for $filename"
+          echo "=== Step 1: Create release and upload artifacts ==="
+          FILE_ARGS=""
+          for UPLOAD_DIR in dist/x86_64-unknown-linux-gnu dist/aarch64-unknown-linux-gnu; do
+            if [ ! -d "$UPLOAD_DIR" ]; then
+              echo "WARN: upload directory not found: $UPLOAD_DIR"
               continue
             fi
 
-            # 从 headers 对象提取请求头，写入 curl 配置文件
-            CURL_CFG="/tmp/curl_headers.cfg"
-            : > "$CURL_CFG"
-            HEADERS_BLOCK=$(echo "$UPLOAD_RESP" | sed 's/.*"headers" *: *{//;s/}.*//')
-            if [ -n "$HEADERS_BLOCK" ]; then
-              echo "$HEADERS_BLOCK" | tr ',' '\n' | \
-                sed -n 's/^ *"\([^"]*\)" *: *"\([^"]*\)" *$/header = "\1: \2"/p' >> "$CURL_CFG"
-            fi
-
-            echo ">>> [${filename}] uploading to pre-signed url..."
-            HTTP_CODE=$(curl -sS -o /tmp/upload_body.txt -w "%{http_code}" \
-              -K "$CURL_CFG" \
-              -X PUT "$UPLOAD_URL" \
-              --upload-file "$file")
-
-            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-              echo ">>> [${filename}] uploaded OK (HTTP ${HTTP_CODE})"
-            else
-              echo ">>> [${filename}] upload FAILED (HTTP ${HTTP_CODE})"
-              echo ">>> response: $(cat /tmp/upload_body.txt 2>/dev/null)"
-            fi
+            while IFS= read -r file; do
+              [ -n "$file" ] || continue
+              FILE_ARGS="$FILE_ARGS \"$file\""
+            done <<FIND_EOF
+          $(find "$UPLOAD_DIR" -maxdepth 1 -type f | sort)
+          FIND_EOF
           done
 
-          echo ""
-          echo "=== Done ==="
+          if [ -z "$FILE_ARGS" ]; then
+            echo "ERROR: no artifacts found to upload"
+            exit 1
+          fi
+
+          eval "python3 .gitcode/workflows/release.py --tag ${RELEASE_TAG} --name ${RELEASE_TAG} --body \"Auto release from linux-build CI\" --files $FILE_ARGS"
