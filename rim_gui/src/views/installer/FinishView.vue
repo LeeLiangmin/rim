@@ -42,7 +42,7 @@ async function closeWindow() {
           <div v-if="!isLinux" c="secondary" text="3vh">{{ $t('post_installation_hint') }}</div>
         </div>
         <div v-if="!isLinux" flex="~ col" gap="4vh" :class="{ 'loading-dimmed': isLoading }">
-          <base-check-box v-model="runApp" :title="$t('post_installation_open')" @titleClick="runApp = !runApp" />
+          <base-check-box v-model="runApp" :title="$t('post_installation_open')" :hint="$t('post_installation_open_hint')" @titleClick="runApp = !runApp" />
           <base-check-box v-model="createShortcut" :title="$t('post_installation_create_shortcut')" @titleClick="createShortcut = !createShortcut" />
         </div>
         <base-button theme="primary" w="20vw" :class="['finish-btn-anchor', { 'finish-btn': !isLinux, 'finish-btn-linux': isLinux }]" @click="closeWindow()" :disabled="isLoading">
