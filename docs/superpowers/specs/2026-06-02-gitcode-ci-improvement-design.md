@@ -34,8 +34,8 @@ GitCode 平台的 EulerOS runner 上配置 CI 流水线，交叉编译 `custom-r
 │   ├── .env                         # [新增] 统一配置源
 │   ├── ci.yml                      # [新增] PR/push 构建校验
 │   ├── release.yml                 # [重写] tag/manual 构建+上传
-│   ├── release.py                  # [保留-小改] 读取 .env 配置
 │   ├── scripts/
+│   │   ├── release.py                 # [保留-小改] GitCode Release API 工具
 │   │   ├── euleros-install-deps.sh # [新增] EulerOS 依赖安装
 │   │   ├── build-target.sh         # [新增] 通用构建脚本
 │   │   └── upload-gitcode-release.sh # [新增] 产物上传

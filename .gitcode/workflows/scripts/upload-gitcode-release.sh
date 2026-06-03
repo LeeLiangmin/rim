@@ -59,7 +59,7 @@ if [[ -z "$FILE_ARGS" ]]; then
 fi
 
 echo "=== Uploading to GitCode Release (tag=$TAG) ==="
-RELEASE_SCRIPT="$SCRIPT_DIR/../release.py"
+RELEASE_SCRIPT="$SCRIPT_DIR/release.py"
 
 if [[ ! -f "$RELEASE_SCRIPT" ]]; then
     echo "ERROR: release.py not found at $RELEASE_SCRIPT"
