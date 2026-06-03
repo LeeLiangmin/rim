@@ -54,14 +54,12 @@ export GIT_HTTP_LOW_SPEED_TIME="${GIT_HTTP_LOW_SPEED_TIME:-30}"
 
 # Set CC for musl cross-compilation (openssl-sys needs this)
 if [[ "$BUILD_TARGET" == *"musl"* ]]; then
-    if command -v musl-gcc >/dev/null 2>&1; then
-        export CC=musl-gcc
-    fi
-    # Ensure x86_64-linux-musl-gcc symlink exists for openssl-sys
+    # openssl-sys hardcodes CC=x86_64-linux-musl-gcc for this target
+    # musl-tools package only provides musl-gcc, so create symlink in /usr/bin
     if ! command -v x86_64-linux-musl-gcc >/dev/null 2>&1 && command -v musl-gcc >/dev/null 2>&1; then
-        ln -sf "$(which musl-gcc)" /usr/local/bin/x86_64-linux-musl-gcc
+        ln -sf "$(which musl-gcc)" /usr/bin/x86_64-linux-musl-gcc
+        echo "  Created symlink: /usr/bin/x86_64-linux-musl-gcc -> $(which musl-gcc)"
     fi
-    export PATH="/usr/local/bin:$PATH"
 fi
 
 # Restore cargo env if available
