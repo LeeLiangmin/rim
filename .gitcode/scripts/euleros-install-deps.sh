@@ -69,6 +69,10 @@ fi
 echo "=== Installing musl tools ==="
 if command -v apt-get >/dev/null 2>&1; then
     install_pkg musl-tools
+    # Create cross-compiler symlink expected by openssl-sys crate
+    if command -v musl-gcc >/dev/null 2>&1 && ! command -v x86_64-linux-musl-gcc >/dev/null 2>&1; then
+        ln -sf "$(which musl-gcc)" /usr/local/bin/x86_64-linux-musl-gcc
+    fi
 else
     install_pkg musl-gcc
 fi
