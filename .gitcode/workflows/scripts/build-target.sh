@@ -78,8 +78,8 @@ if ! $SKIP_GUI; then
         DIST_NAME=""
         case "$DIST_TARGETS" in
             *windows*)      echo "WARNING: GUI build skipped for Windows target" ;;
-            *aarch64*)      DIST_NAME="dist-aarch64-linux" ;;
-            *x86_64*)       DIST_NAME="dist-x86-64-linux" ;;
+            *aarch64*)      DIST_NAME="${DOCKER_IMAGE_AARCH64:-dist-aarch64-linux}" ;;
+            *x86_64*)       DIST_NAME="${DOCKER_IMAGE_X86_64:-dist-x86-64-linux}" ;;
         esac
         if [[ -n "$DIST_NAME" ]]; then
             bash ci/scripts/build-in-docker.sh "$DIST_NAME"
@@ -88,36 +88,47 @@ if ! $SKIP_GUI; then
 fi
 
 echo "=== Validating build artifacts ==="
-PRIMARY_DIST_TARGET="${DIST_TARGETS%%,*}"
-test -d "dist/$PRIMARY_DIST_TARGET" || {
-    echo "ERROR: dist/$PRIMARY_DIST_TARGET not found"
-    exit 1
-}
+IFS=',' read -ra DIST_TARGET_ARRAY <<< "$DIST_TARGETS"
+HAS_ERROR=false
 
-CLI_COUNT=$(find "dist/$PRIMARY_DIST_TARGET" -maxdepth 1 -type f -name '*-installer-cli*' | wc -l)
-if [[ "$CLI_COUNT" -eq 0 ]]; then
-    echo "ERROR: no CLI installer found in dist/$PRIMARY_DIST_TARGET"
+for DT in "${DIST_TARGET_ARRAY[@]}"; do
+    test -d "dist/$DT" || {
+        echo "ERROR: dist/$DT not found"
+        HAS_ERROR=true
+        continue
+    }
+
+    CLI_COUNT=$(find "dist/$DT" -maxdepth 1 -type f -name '*-installer-cli*' | wc -l)
+    if [[ "$CLI_COUNT" -eq 0 ]]; then
+        echo "ERROR: no CLI installer found in dist/$DT"
+        HAS_ERROR=true
+    else
+        echo "  [$DT] CLI installers: $CLI_COUNT found"
+    fi
+
+    if ! $SKIP_GUI; then
+        GUI_COUNT=$(find "dist/$DT" -maxdepth 1 -type f -name '*-installer*' ! -name '*-installer-cli*' | wc -l)
+        echo "  [$DT] GUI installers: $GUI_COUNT found"
+    fi
+
+    case "$DT" in
+        *windows*)
+            ZIP_COUNT=$(find "dist/$DT" -maxdepth 1 -type f -name '*.zip' | wc -l)
+            echo "  [$DT] zip packages:  $ZIP_COUNT found"
+            ;;
+        *linux*)
+            XZ_COUNT=$(find "dist/$DT" -maxdepth 1 -type f -name '*.tar.xz' | wc -l)
+            echo "  [$DT] tar.xz packages: $XZ_COUNT found"
+            ;;
+    esac
+
+    echo "=== [$DT] artifacts listing ==="
+    find "dist/$DT" -maxdepth 2 -type f -print
+done
+
+if $HAS_ERROR; then
+    echo "ERROR: one or more dist targets failed validation"
     exit 1
 fi
-echo "  CLI installers: $CLI_COUNT found"
-
-if ! $SKIP_GUI; then
-    GUI_COUNT=$(find "dist/$PRIMARY_DIST_TARGET" -maxdepth 1 -type f -name '*-installer*' ! -name '*-installer-cli*' | wc -l)
-    echo "  GUI installers: $GUI_COUNT found"
-fi
-
-case "$PRIMARY_DIST_TARGET" in
-    *windows*)
-        ZIP_COUNT=$(find "dist/$PRIMARY_DIST_TARGET" -maxdepth 1 -type f -name '*.zip' | wc -l)
-        echo "  zip packages:  $ZIP_COUNT found"
-        ;;
-    *linux*)
-        XZ_COUNT=$(find "dist/$PRIMARY_DIST_TARGET" -maxdepth 1 -type f -name '*.tar.xz' | wc -l)
-        echo "  tar.xz packages: $XZ_COUNT found"
-        ;;
-esac
-
-echo "=== Build artifacts listing ==="
-find "dist/$PRIMARY_DIST_TARGET" -maxdepth 2 -type f -print
 
 echo "=== Build completed successfully ==="
