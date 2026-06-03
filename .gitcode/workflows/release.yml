@@ -14,5 +14,11 @@ jobs:
       - uses: checkout-action@0.0.1
       - name: Check system
         run: cd repo_workspace && uname -a
-      - name: Check env
-        run: cd repo_workspace && echo hello
+      - name: Run build
+        run: |
+          cd repo_workspace
+          set -e
+          set -a; source .gitcode/.env; set +a
+          bash .gitcode/scripts/build-target.sh \
+            --build-target "$BUILD_TARGET_X86_64" \
+            --dist-targets "$DIST_TARGETS_X86_64"
