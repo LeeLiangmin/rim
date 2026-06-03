@@ -1,0 +1,15 @@
+name: gitcode-sample
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: euleros-2.10.1
+    steps:
+      - uses: checkout-action@0.0.1
+      - name: Check system
+        run: cd repo_workspace && uname -a
