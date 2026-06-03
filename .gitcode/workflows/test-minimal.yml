@@ -8,8 +8,8 @@ on:
 
 jobs:
   build:
-    runs-on: euleros-2.10.1
+    runs-on: ubuntu:latest
     steps:
       - uses: checkout-action@0.0.1
       - name: Check system
-        run: cd repo_workspace && uname -a
+        run: uname -a
