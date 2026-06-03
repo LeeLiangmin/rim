@@ -14,9 +14,10 @@
     python3 release.py --list
 
 环境变量:
-    GITCODE_TOKEN   - access_token（必需）
-    GITCODE_OWNER   - 仓库 owner（可选，默认 xuanwu）
-    GITCODE_REPO    - 仓库名（可选，默认 custom-rust-dist）
+    GITCODE_TOKEN      - access_token（必需）
+    GITCODE_BASE_URL   - API 基础地址（可选，默认 https://api.gitcode.com/api/v5）
+    GITCODE_OWNER      - 仓库 owner（可选，默认 xuanwu）
+    GITCODE_REPO       - 仓库名（可选，默认 custom-rust-dist）
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ except ModuleNotFoundError:
 # 配置
 # ---------------------------------------------------------------------------
 
-API_BASE = "https://api.gitcode.com/api/v5"
+API_BASE = os.environ.get("GITCODE_BASE_URL", "https://api.gitcode.com/api/v5")
 TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
 
