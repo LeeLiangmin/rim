@@ -2,206 +2,116 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      tags:
-        description: tag name
   push:
     tags:
       - v*.*.*
 
 jobs:
-  build_linux_x86_64:
-    name: Build Linux x86_64 on EulerOS
+  linux-x86_64:
+    name: Build and Release Linux x86_64
     runs-on: euleros-latest
-    env:
-      EDITION: community
-      BUILD_TARGET: x86_64-unknown-linux-musl
-      DIST_TARGETS: x86_64-unknown-linux-gnu
-      DIST_NAME: dist-x86-64-linux
+
     steps:
-      - name: checkout the source code
-        uses: actions/checkout@v4
+      - uses: checkout-action@0.0.1
 
-      - name: install dependencies on EulerOS
+      - name: Load shared config
         run: |
-          # TODO: replace with verified EulerOS package names if the GitCode runner image is not compatible with dnf/yum package names below.
-          if command -v dnf >/dev/null 2>&1; then
-            sudo dnf install -y \
-              curl \
-              wget \
-              file \
-              gcc \
-              gcc-c++ \
-              make \
-              perl \
-              openssl-devel \
-              gtk3-devel \
-              webkit2gtk4.0-devel \
-              libappindicator-gtk3-devel \
-              librsvg2-devel \
-              musl-gcc
-          elif command -v yum >/dev/null 2>&1; then
-            sudo yum install -y \
-              curl \
-              wget \
-              file \
-              gcc \
-              gcc-c++ \
-              make \
-              perl \
-              openssl-devel \
-              gtk3-devel \
-              webkit2gtk4.0-devel \
-              libappindicator-gtk3-devel \
-              librsvg2-devel \
-              musl-gcc
-          else
-            echo "Unsupported EulerOS package manager"
-            exit 1
-          fi
+          set -e
+          cd repo_workspace
+          set -a; source .gitcode/.env; set +a
 
-      - name: setup NodeJS
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: install pnpm
-        run: npm i -g pnpm
-
-      - name: install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ env.BUILD_TARGET }}
-
-      - name: download packages for offline build
-        run: cargo dev vendor --for ${{ env.DIST_TARGETS }}
-
-      - name: run build job
+      - name: Install dependencies
         run: |
-          # Build CLI binary with musl first. Then use docker to build the GUI binary,
-          # which will automatically collect the previous CLI binary when packing offline package.
-          cargo dev dist --cli -b --target ${{ env.BUILD_TARGET }} --for ${{ env.DIST_TARGETS }}
-          bash ci/scripts/build-in-docker.sh ${{ env.DIST_NAME }}
+          set -e
+          cd repo_workspace
+          bash .gitcode/workflows/scripts/euleros-install-deps.sh --linux-gui
 
-      - name: validate dist artifacts
+      - name: Build
         run: |
-          test -d "dist/${{ env.DIST_TARGETS }}"
-          test -n "$(find "dist/${{ env.DIST_TARGETS }}" -maxdepth 1 -type f -name '*-installer-cli*' -print -quit)"
-          test -n "$(find "dist/${{ env.DIST_TARGETS }}" -maxdepth 1 -type f -name '*-installer*' ! -name '*-installer-cli*' -print -quit)"
-          test -n "$(find "dist/${{ env.DIST_TARGETS }}" -maxdepth 1 -type f -name '*.tar.xz' -print -quit)"
+          set -e
+          cd repo_workspace
+          bash .gitcode/workflows/scripts/build-target.sh \
+            --build-target "$BUILD_TARGET_X86_64" \
+            --dist-targets "$DIST_TARGETS_X86_64"
 
-      - name: upload pipeline artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.DIST_TARGETS }}
-          paths: dist/${{ env.DIST_TARGETS }}/**/*
+      - name: Upload to GitCode Release
+        run: |
+          set -e
+          cd repo_workspace
+          RELEASE_TAG="${CI_COMMIT_TAG:-$DEFAULT_RELEASE_TAG}"
+          bash .gitcode/workflows/scripts/upload-gitcode-release.sh \
+            --tag "$RELEASE_TAG" \
+            --dist-dir "dist/$DIST_TARGETS_X86_64"
 
-  build_linux_aarch64:
-    name: Build Linux aarch64 on EulerOS
+  linux-aarch64:
+    name: Build and Release Linux aarch64
     runs-on: euleros-aarch64-latest
-    env:
-      EDITION: community
-      BUILD_TARGET: aarch64-unknown-linux-musl
-      DIST_TARGETS: aarch64-unknown-linux-gnu
-      DIST_NAME: dist-aarch64-linux
+
     steps:
-      - name: checkout the source code
-        uses: actions/checkout@v4
+      - uses: checkout-action@0.0.1
 
-      - name: install dependencies on EulerOS
+      - name: Load shared config
         run: |
-          # TODO: replace with verified EulerOS package names if the GitCode runner image is not compatible with dnf/yum package names below.
-          if command -v dnf >/dev/null 2>&1; then
-            sudo dnf install -y \
-              curl \
-              wget \
-              file \
-              gcc \
-              gcc-c++ \
-              make \
-              perl \
-              openssl-devel \
-              gtk3-devel \
-              webkit2gtk4.0-devel \
-              libappindicator-gtk3-devel \
-              librsvg2-devel \
-              musl-gcc
-          elif command -v yum >/dev/null 2>&1; then
-            sudo yum install -y \
-              curl \
-              wget \
-              file \
-              gcc \
-              gcc-c++ \
-              make \
-              perl \
-              openssl-devel \
-              gtk3-devel \
-              webkit2gtk4.0-devel \
-              libappindicator-gtk3-devel \
-              librsvg2-devel \
-              musl-gcc
-          else
-            echo "Unsupported EulerOS package manager"
-            exit 1
-          fi
+          set -e
+          cd repo_workspace
+          set -a; source .gitcode/.env; set +a
 
-      - name: setup NodeJS
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: install pnpm
-        run: npm i -g pnpm
-
-      - name: install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ env.BUILD_TARGET }}
-
-      - name: download packages for offline build
-        run: cargo dev vendor --for ${{ env.DIST_TARGETS }}
-
-      - name: run build job
+      - name: Install dependencies
         run: |
-          # Build CLI binary with musl first. Then use docker to build the GUI binary,
-          # which will automatically collect the previous CLI binary when packing offline package.
-          cargo dev dist --cli -b --target ${{ env.BUILD_TARGET }} --for ${{ env.DIST_TARGETS }}
-          bash ci/scripts/build-in-docker.sh ${{ env.DIST_NAME }}
+          set -e
+          cd repo_workspace
+          bash .gitcode/workflows/scripts/euleros-install-deps.sh --linux-gui
 
-      - name: validate dist artifacts
+      - name: Build
         run: |
-          test -d "dist/${{ env.DIST_TARGETS }}"
-          test -n "$(find "dist/${{ env.DIST_TARGETS }}" -maxdepth 1 -type f -name '*-installer-cli*' -print -quit)"
-          test -n "$(find "dist/${{ env.DIST_TARGETS }}" -maxdepth 1 -type f -name '*-installer*' ! -name '*-installer-cli*' -print -quit)"
-          test -n "$(find "dist/${{ env.DIST_TARGETS }}" -maxdepth 1 -type f -name '*.tar.xz' -print -quit)"
+          set -e
+          cd repo_workspace
+          bash .gitcode/workflows/scripts/build-target.sh \
+            --build-target "$BUILD_TARGET_AARCH64" \
+            --dist-targets "$DIST_TARGETS_AARCH64"
 
-      - name: upload pipeline artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.DIST_TARGETS }}
-          paths: dist/${{ env.DIST_TARGETS }}/**/*
+      - name: Upload to GitCode Release
+        run: |
+          set -e
+          cd repo_workspace
+          RELEASE_TAG="${CI_COMMIT_TAG:-$DEFAULT_RELEASE_TAG}"
+          bash .gitcode/workflows/scripts/upload-gitcode-release.sh \
+            --tag "$RELEASE_TAG" \
+            --dist-dir "dist/$DIST_TARGETS_AARCH64"
 
-  publish_release:
-    name: Publish GitCode Release
+  windows-gnu:
+    name: Build and Release Windows (mingw cross)
     runs-on: euleros-latest
-    needs:
-      - build_linux_x86_64
-      - build_linux_aarch64
+
     steps:
-      - name: download pipeline artifacts
-        uses: actions/download-artifact@v4
-        with:
-          paths: dist
+      - uses: checkout-action@0.0.1
 
-      - name: list release assets
-        run: find dist -type f -print
-
-      - name: publish to GitCode Release
+      - name: Load shared config
         run: |
-          # TODO: upload dist/**/* to GitCode Release after confirming GitCode's preferred release mechanism.
-          # Candidate implementations:
-          # 1. GitCode native release action, if available on the runner.
-          # 2. GitCode OpenAPI call with a repository token stored in CI secrets.
-          # 3. GitCode CLI, if the official runner image provides it.
-          echo "GitCode Release upload is intentionally left as a placeholder in the first skeleton."
+          set -e
+          cd repo_workspace
+          set -a; source .gitcode/.env; set +a
+
+      - name: Install dependencies
+        run: |
+          set -e
+          cd repo_workspace
+          bash .gitcode/workflows/scripts/euleros-install-deps.sh --windows-cross
+
+      - name: Build
+        run: |
+          set -e
+          cd repo_workspace
+          bash .gitcode/workflows/scripts/build-target.sh \
+            --build-target "$BUILD_TARGET_WINDOWS" \
+            --dist-targets "$DIST_TARGETS_WINDOWS" \
+            --skip-gui
+
+      - name: Upload to GitCode Release
+        run: |
+          set -e
+          cd repo_workspace
+          RELEASE_TAG="${CI_COMMIT_TAG:-$DEFAULT_RELEASE_TAG}"
+          bash .gitcode/workflows/scripts/upload-gitcode-release.sh \
+            --tag "$RELEASE_TAG" \
+            --dist-dir "dist/${DIST_TARGETS_WINDOWS%%,*}"
