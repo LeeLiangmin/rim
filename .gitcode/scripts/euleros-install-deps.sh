@@ -97,7 +97,7 @@ echo "=== Installing Rust (via xuanwu mirror) ==="
 export RUSTUP_DIST_SERVER="${RUSTUP_DIST_SERVER:-https://mirror.xuanwu.openatom.cn}"
 export RUSTUP_UPDATE_ROOT="${RUSTUP_UPDATE_ROOT:-https://mirror.xuanwu.openatom.cn/rustup}"
 if ! command -v cargo >/dev/null 2>&1; then
-    curl --proto '=https' --tlsv1.2 -sSf "$RUSTUP_UPDATE_ROOT/rustup-init.sh" | sh -s -- -y --profile minimal
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 fi
 source "$HOME/.cargo/env"
 rustup toolchain install stable --profile minimal
