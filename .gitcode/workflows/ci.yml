@@ -2,9 +2,9 @@ name: CI Build Check
 
 on:
   push:
-    branches: ["main", "llm"]
+    branches: ["main", "master", "llm"]
   pull_request:
-    branches: ["main", "llm"]
+    branches: ["main", "master", "llm"]
 
 jobs:
   linux-x86_64:
