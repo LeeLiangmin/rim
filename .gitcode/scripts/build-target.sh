@@ -60,6 +60,10 @@ if [[ "$BUILD_TARGET" == *"musl"* ]]; then
         ln -sf "$(which musl-gcc)" /usr/bin/x86_64-linux-musl-gcc
         echo "  Created symlink: /usr/bin/x86_64-linux-musl-gcc -> $(which musl-gcc)"
     fi
+    # Also set cargo linker and CC env vars to ensure all subprocesses use musl-gcc
+    export CC=musl-gcc
+    export CC_x86_64_unknown_linux_musl=musl-gcc
+    export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
 fi
 
 # Restore cargo env if available
