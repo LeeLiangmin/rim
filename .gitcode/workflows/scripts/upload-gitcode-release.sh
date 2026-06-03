@@ -32,7 +32,7 @@ fi
 
 # Load shared config
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env"
+ENV_FILE="$SCRIPT_DIR/../../.env"
 if [[ -f "$ENV_FILE" ]]; then
     set -a; source "$ENV_FILE"; set +a
 fi
