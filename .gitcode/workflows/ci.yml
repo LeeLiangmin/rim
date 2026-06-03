@@ -18,7 +18,7 @@ jobs:
         run: |
           set -e
           cd repo_workspace
-          set -a; source .gitcode/.env; set +a
+          set -a; source .gitcode/workflows/.env; set +a
 
       - name: Install dependencies
         run: |
@@ -45,7 +45,7 @@ jobs:
         run: |
           set -e
           cd repo_workspace
-          set -a; source .gitcode/.env; set +a
+          set -a; source .gitcode/workflows/.env; set +a
 
       - name: Install dependencies
         run: |
@@ -72,7 +72,7 @@ jobs:
         run: |
           set -e
           cd repo_workspace
-          set -a; source .gitcode/.env; set +a
+          set -a; source .gitcode/workflows/.env; set +a
 
       - name: Install dependencies
         run: |
