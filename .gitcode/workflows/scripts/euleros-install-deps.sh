@@ -31,10 +31,8 @@ install_yum() {
 
 echo "=== Installing base dependencies ==="
 if command -v yum >/dev/null 2>&1; then
-    PKG_MGR="yum"
     install_yum curl wget file gcc gcc-c++ make perl openssl-devel pkg-config git musl-gcc
 elif command -v dnf >/dev/null 2>&1; then
-    PKG_MGR="dnf"
     sudo dnf install -y curl wget file gcc gcc-c++ make perl openssl-devel pkg-config git musl-gcc
 else
     echo "ERROR: no supported package manager found"
@@ -59,7 +57,9 @@ fi
 node --version
 
 echo "=== Installing pnpm ==="
-npm install -g pnpm
+if ! command -v pnpm >/dev/null 2>&1; then
+    npm install -g pnpm
+fi
 pnpm --version
 
 echo "=== Installing Rust ==="
@@ -95,6 +95,6 @@ git-fetch-with-cli = true
 CARGOEOF
 
 echo "=== Installing Python httpx for release script ==="
-pip3 install --quiet httpx
+python3 -c "import httpx" 2>/dev/null || pip3 install --quiet httpx
 
 echo "=== Dependencies installed successfully ==="
