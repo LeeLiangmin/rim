@@ -52,6 +52,18 @@ grep -A5 '\[workspace\]' Cargo.toml | head -6
 export GIT_HTTP_LOW_SPEED_LIMIT="${GIT_HTTP_LOW_SPEED_LIMIT:-1000}"
 export GIT_HTTP_LOW_SPEED_TIME="${GIT_HTTP_LOW_SPEED_TIME:-30}"
 
+# Set CC for musl cross-compilation (openssl-sys needs this)
+if [[ "$BUILD_TARGET" == *"musl"* ]]; then
+    if command -v musl-gcc >/dev/null 2>&1; then
+        export CC=musl-gcc
+    fi
+    # Ensure x86_64-linux-musl-gcc symlink exists for openssl-sys
+    if ! command -v x86_64-linux-musl-gcc >/dev/null 2>&1 && command -v musl-gcc >/dev/null 2>&1; then
+        ln -sf "$(which musl-gcc)" /usr/local/bin/x86_64-linux-musl-gcc
+    fi
+    export PATH="/usr/local/bin:$PATH"
+fi
+
 # Restore cargo env if available
 if [[ -f "$HOME/.cargo/env" ]]; then
     source "$HOME/.cargo/env"
