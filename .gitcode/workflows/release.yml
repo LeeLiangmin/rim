@@ -11,3 +11,5 @@ jobs:
       - uses: checkout-action@0.0.1
       - name: Check system
         run: cd repo_workspace && uname -a
+      - name: Check env
+        run: cd repo_workspace && echo hello
