@@ -9,7 +9,7 @@ on:
 jobs:
   linux-x86_64:
     name: Build and Release Linux x86_64
-    runs-on: euleros-2.10.1
+    runs-on: ubuntu:latest
 
     steps:
       - uses: checkout-action@0.0.1
@@ -45,7 +45,7 @@ jobs:
 
   linux-aarch64:
     name: Build and Release Linux aarch64
-    runs-on: euleros-2.10.1
+    runs-on: ubuntu:latest
 
     steps:
       - uses: checkout-action@0.0.1
@@ -81,7 +81,7 @@ jobs:
 
   windows-gnu:
     name: Build and Release Windows (mingw cross)
-    runs-on: euleros-2.10.1
+    runs-on: ubuntu:latest
 
     steps:
       - uses: checkout-action@0.0.1
