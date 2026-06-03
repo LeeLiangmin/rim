@@ -88,6 +88,8 @@ node --version
 echo "=== Installing pnpm ==="
 if ! command -v pnpm >/dev/null 2>&1; then
     npm install -g pnpm
+    # Ensure npm global bin is in PATH
+    export PATH="$(npm prefix -g)/bin:$PATH"
 fi
 pnpm --version
 
