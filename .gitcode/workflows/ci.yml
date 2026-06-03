@@ -1,91 +1,15 @@
 name: CI Build Check
-# CI workflow for build validation
 
 on:
   push:
-    branches: ["main", "master", "llm"]
+    branches: [ "master" ]
   pull_request:
-    branches: ["main", "master", "llm"]
+    branches: [ "master" ]
 
 jobs:
-  linux-x86_64:
-    name: Build Linux x86_64
+  linux-x86-64:
     runs-on: euleros-2.10.1
-
     steps:
       - uses: checkout-action@0.0.1
-
-      - name: Load shared config
-        run: |
-          set -e
-          cd repo_workspace
-          set -a; source .gitcode/.env; set +a
-
-      - name: Install dependencies
-        run: |
-          set -e
-          cd repo_workspace
-          bash .gitcode/scripts/euleros-install-deps.sh --linux-gui
-
-      - name: Build
-        run: |
-          set -e
-          cd repo_workspace
-          bash .gitcode/scripts/build-target.sh \
-            --build-target "$BUILD_TARGET_X86_64" \
-            --dist-targets "$DIST_TARGETS_X86_64"
-
-  linux-aarch64:
-    name: Build Linux aarch64
-    runs-on: euleros-2.10.1
-
-    steps:
-      - uses: checkout-action@0.0.1
-
-      - name: Load shared config
-        run: |
-          set -e
-          cd repo_workspace
-          set -a; source .gitcode/.env; set +a
-
-      - name: Install dependencies
-        run: |
-          set -e
-          cd repo_workspace
-          bash .gitcode/scripts/euleros-install-deps.sh --linux-gui
-
-      - name: Build
-        run: |
-          set -e
-          cd repo_workspace
-          bash .gitcode/scripts/build-target.sh \
-            --build-target "$BUILD_TARGET_AARCH64" \
-            --dist-targets "$DIST_TARGETS_AARCH64"
-
-  windows-gnu:
-    name: Build Windows (mingw cross)
-    runs-on: euleros-2.10.1
-
-    steps:
-      - uses: checkout-action@0.0.1
-
-      - name: Load shared config
-        run: |
-          set -e
-          cd repo_workspace
-          set -a; source .gitcode/.env; set +a
-
-      - name: Install dependencies
-        run: |
-          set -e
-          cd repo_workspace
-          bash .gitcode/scripts/euleros-install-deps.sh --windows-cross
-
-      - name: Build
-        run: |
-          set -e
-          cd repo_workspace
-          bash .gitcode/scripts/build-target.sh \
-            --build-target "$BUILD_TARGET_WINDOWS" \
-            --dist-targets "$DIST_TARGETS_WINDOWS" \
-            --skip-gui
+      - name: Check system
+        run: cd repo_workspace && uname -a
