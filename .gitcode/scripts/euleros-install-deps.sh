@@ -87,8 +87,8 @@ node --version
 
 echo "=== Installing pnpm ==="
 if ! command -v pnpm >/dev/null 2>&1; then
-    npm install -g pnpm
-    # Ensure npm global bin is in PATH
+    # pnpm 9.x supports Node.js 18+, pnpm 10+ requires Node.js 22+
+    npm install -g pnpm@9
     export PATH="$(npm prefix -g)/bin:$PATH"
 fi
 pnpm --version
