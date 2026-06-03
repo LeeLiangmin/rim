@@ -11,6 +11,12 @@ usage() {
 INSTALL_GUI=false
 INSTALL_WIN_CROSS=false
 
+# Use sudo only if not already root
+SUDO=""
+if [[ "$(id -u)" -ne 0 ]]; then
+    SUDO="sudo"
+fi
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --linux-gui) INSTALL_GUI=true ;;
@@ -23,9 +29,9 @@ done
 
 install_yum() {
     local pkgs=("$@")
-    sudo yum install -y "${pkgs[@]}" || {
+    $SUDO yum install -y "${pkgs[@]}" || {
         echo "yum install failed, trying dnf..."
-        sudo dnf install -y "${pkgs[@]}"
+        $SUDO dnf install -y "${pkgs[@]}"
     }
 }
 
@@ -33,7 +39,7 @@ echo "=== Installing base dependencies ==="
 if command -v yum >/dev/null 2>&1; then
     install_yum curl wget file gcc gcc-c++ make perl openssl-devel pkg-config git musl-gcc
 elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y curl wget file gcc gcc-c++ make perl openssl-devel pkg-config git musl-gcc
+    $SUDO dnf install -y curl wget file gcc gcc-c++ make perl openssl-devel pkg-config git musl-gcc
 else
     echo "ERROR: no supported package manager found"
     exit 1
@@ -51,7 +57,7 @@ fi
 
 echo "=== Installing Node.js 20.x ==="
 if ! command -v node >/dev/null 2>&1; then
-    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | $SUDO bash -
     install_yum nodejs
 fi
 node --version
