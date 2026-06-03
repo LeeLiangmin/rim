@@ -1,4 +1,5 @@
 name: CI Build Check
+# CI workflow for build validation
 
 on:
   push:

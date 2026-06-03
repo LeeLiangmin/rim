@@ -1,4 +1,5 @@
 name: Release
+# Release workflow: build + upload on tag push or manual trigger
 
 on:
   workflow_dispatch:
