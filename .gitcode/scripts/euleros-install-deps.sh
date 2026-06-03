@@ -111,6 +111,9 @@ cargo --version
 echo "=== Configuring cargo mirror ==="
 mkdir -p .cargo
 cat > .cargo/config.toml <<CARGOEOF
+[net]
+git-fetch-with-cli = true
+
 [source.crates-io]
 replace-with = 'xuanwu-sparse'
 
@@ -122,9 +125,6 @@ registry = "sparse+https://mirror.xuanwu.openatom.cn/index/"
 
 [registries.xuanwu]
 index = "https://mirror.xuanwu.openatom.cn/crates.io-index"
-
-[net]
-git-fetch-with-cli = true
 CARGOEOF
 
 echo "=== Installing Python httpx for release script ==="
