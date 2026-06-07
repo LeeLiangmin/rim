@@ -74,6 +74,11 @@ fi
 
 # Set CC/linker for aarch64 cross-compilation
 if [[ "$BUILD_TARGET" == "aarch64-unknown-linux-gnu" ]]; then
+    # Add toolchain path if installed via euleros-install-deps.sh
+    if [[ -d "/opt/aarch64-toolchain/bin" ]]; then
+        export PATH="/opt/aarch64-toolchain/bin:$PATH"
+    fi
+
     if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
         echo "  Using aarch64-linux-gnu-gcc for cross-compilation"
         export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
