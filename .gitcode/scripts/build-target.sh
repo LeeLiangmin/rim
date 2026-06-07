@@ -72,6 +72,19 @@ if [[ "$BUILD_TARGET" == *"musl"* ]]; then
     fi
 fi
 
+# Set CC/linker for aarch64 cross-compilation
+if [[ "$BUILD_TARGET" == "aarch64-unknown-linux-gnu" ]]; then
+    if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+        echo "  Using aarch64-linux-gnu-gcc for cross-compilation"
+        export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+        export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+    else
+        echo "ERROR: aarch64-linux-gnu-gcc not found, cannot cross-compile for aarch64"
+        echo "  Install with: apt-get install gcc-aarch64-linux-gnu"
+        exit 1
+    fi
+fi
+
 # Restore cargo env if available
 if [[ -f "$HOME/.cargo/env" ]]; then
     source "$HOME/.cargo/env"

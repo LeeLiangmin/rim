@@ -66,6 +66,14 @@ if $INSTALL_WIN_CROSS; then
     fi
 fi
 
+echo "=== Installing aarch64 cross-compilation toolchain ==="
+if command -v apt-get >/dev/null 2>&1; then
+    apt-get install -y gcc-aarch64-linux-gnu 2>/dev/null || echo "  gcc-aarch64-linux-gnu not available"
+else
+    dnf install -y gcc-aarch64-linux-gnu 2>/dev/null || yum install -y gcc-aarch64-linux-gnu 2>/dev/null || echo "  gcc-aarch64-linux-gnu not available"
+fi
+echo "  aarch64-linux-gnu-gcc: $(command -v aarch64-linux-gnu-gcc || echo 'not found')"
+
 echo "=== Installing musl tools ==="
 if command -v apt-get >/dev/null 2>&1; then
     apt-get install -y musl-tools 2>/dev/null || echo "  musl-tools not available (will fall back to gnu target)"
