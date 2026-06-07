@@ -54,13 +54,18 @@ export GIT_HTTP_LOW_SPEED_TIME="${GIT_HTTP_LOW_SPEED_TIME:-30}"
 
 # Set CC for musl cross-compilation (openssl-sys needs this)
 if [[ "$BUILD_TARGET" == *"musl"* ]]; then
-    # openssl-sys hardcodes CC=x86_64-linux-musl-gcc for this target
-    # musl-tools package only provides musl-gcc, so create symlink in /usr/bin
-    if ! command -v x86_64-linux-musl-gcc >/dev/null 2>&1 && command -v musl-gcc >/dev/null 2>&1; then
-        ln -sf "$(which musl-gcc)" /usr/bin/x86_64-linux-musl-gcc
-        echo "  Created symlink: /usr/bin/x86_64-linux-musl-gcc -> $(which musl-gcc)"
+    if ! command -v musl-gcc >/dev/null 2>&1; then
+        echo "ERROR: musl-gcc is required for musl target build but not found in PATH"
+        echo "  Install it with: yum install musl-gcc  or  apt-get install musl-tools"
+        exit 1
     fi
-    # Also set cargo linker and CC env vars to ensure all subprocesses use musl-gcc
+    # openssl-sys hardcodes CC=x86_64-linux-musl-gcc for this target
+    # musl-tools package only provides musl-gcc, so create symlink
+    if ! command -v x86_64-linux-musl-gcc >/dev/null 2>&1; then
+        mkdir -p /usr/local/bin
+        ln -sf "$(which musl-gcc)" /usr/local/bin/x86_64-linux-musl-gcc
+        echo "  Created symlink: /usr/local/bin/x86_64-linux-musl-gcc -> $(which musl-gcc)"
+    fi
     export CC=musl-gcc
     export CC_x86_64_unknown_linux_musl=musl-gcc
     export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc

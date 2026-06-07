@@ -68,14 +68,25 @@ fi
 
 echo "=== Installing musl tools ==="
 if command -v apt-get >/dev/null 2>&1; then
-    install_pkg musl-tools
-    # Create cross-compiler symlink expected by openssl-sys crate
+    apt-get install -y musl-tools || {
+        echo "ERROR: failed to install musl-tools"
+        exit 1
+    }
     if command -v musl-gcc >/dev/null 2>&1 && ! command -v x86_64-linux-musl-gcc >/dev/null 2>&1; then
         ln -sf "$(which musl-gcc)" /usr/local/bin/x86_64-linux-musl-gcc
     fi
 else
-    install_pkg musl-gcc
+    dnf install -y musl-gcc 2>/dev/null || yum install -y musl-gcc 2>/dev/null || {
+        echo "ERROR: failed to install musl-gcc (tried dnf and yum)"
+        exit 1
+    }
 fi
+
+if ! command -v musl-gcc >/dev/null 2>&1; then
+    echo "ERROR: musl-gcc still not found after installation"
+    exit 1
+fi
+echo "  musl-gcc: $(which musl-gcc)"
 
 echo "=== Installing Node.js ==="
 if ! command -v node >/dev/null 2>&1; then
