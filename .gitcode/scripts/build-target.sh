@@ -85,45 +85,22 @@ if [[ "$BUILD_TARGET" == "aarch64-unknown-linux-gnu" ]]; then
         if [[ "$MACHINE_ARCH" == "aarch64" || "$MACHINE_ARCH" == "arm64" ]]; then
             echo "  Native aarch64 machine, no cross-compiler needed"
         else
-            # Download cross-compiler toolchain to user home (no root needed)
-            echo "  aarch64-linux-gnu-gcc not found, downloading cross-compiler..."
+            # Download cross-compiler toolchain from OBS (internal mirror, fast)
+            echo "  aarch64-linux-gnu-gcc not found, downloading cross-compiler from OBS..."
             TOOLCHAIN_DIR="$HOME/aarch64-toolchain"
+            TOOLCHAIN_URL="https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz"
             mkdir -p "$TOOLCHAIN_DIR"
 
-            # Try multiple sources (China-accessible mirrors first)
-            TOOLCHAIN_URLS=(
-                "https://musl.cc/aarch64-linux-musl-cross.tgz"
-                "https://more.musl.cc/x86_64-linux-musl/aarch64-linux-gnu-cross.tgz"
-                "https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz"
-            )
-
-            DOWNLOADED=false
-            for URL in "${TOOLCHAIN_URLS[@]}"; do
-                echo "  Trying: $URL"
-                if [[ "$URL" == *.tar.xz ]]; then
-                    if curl -sSL --connect-timeout 10 --max-time 300 "$URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR" 2>/dev/null; then
-                        DOWNLOADED=true
-                        break
-                    fi
-                else
-                    if curl -sSL --connect-timeout 10 --max-time 300 "$URL" | tar -xz --strip-components=1 -C "$TOOLCHAIN_DIR" 2>/dev/null; then
-                        DOWNLOADED=true
-                        break
-                    fi
-                fi
-                echo "  Failed, trying next..."
-            done
-
-            if $DOWNLOADED && [ -f "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc" ]; then
+            if curl -sSL --connect-timeout 10 --max-time 300 "$TOOLCHAIN_URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
                 export PATH="$TOOLCHAIN_DIR/bin:$PATH"
-                echo "  Installed cross-compiler to $TOOLCHAIN_DIR"
-            elif $DOWNLOADED && [ -f "$TOOLCHAIN_DIR/bin/aarch64-linux-musl-gcc" ]; then
-                # musl.cc provides aarch64-linux-musl-gcc, create a symlink
-                ln -sf "$TOOLCHAIN_DIR/bin/aarch64-linux-musl-gcc" "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc"
-                export PATH="$TOOLCHAIN_DIR/bin:$PATH"
-                echo "  Installed musl cross-compiler (symlinked as aarch64-linux-gnu-gcc)"
+                # ARM toolchain uses aarch64-none-linux-gnu- prefix, create symlinks
+                ln -sf "$TOOLCHAIN_DIR/bin/aarch64-none-linux-gnu-gcc" "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc"
+                ln -sf "$TOOLCHAIN_DIR/bin/aarch64-none-linux-gnu-ar" "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-ar"
+                ln -sf "$TOOLCHAIN_DIR/bin/aarch64-none-linux-gnu-ld" "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-ld"
+                echo "  Installed ARM toolchain to $TOOLCHAIN_DIR"
             else
-                echo "ERROR: failed to download aarch64 cross-compiler from all sources"
+                echo "ERROR: failed to download aarch64 cross-compiler from OBS"
+                echo "  URL: $TOOLCHAIN_URL"
                 exit 1
             fi
         fi
