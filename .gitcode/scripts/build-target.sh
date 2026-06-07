@@ -85,17 +85,45 @@ if [[ "$BUILD_TARGET" == "aarch64-unknown-linux-gnu" ]]; then
         if [[ "$MACHINE_ARCH" == "aarch64" || "$MACHINE_ARCH" == "arm64" ]]; then
             echo "  Native aarch64 machine, no cross-compiler needed"
         else
-            # Download Linaro toolchain to user home (no root needed)
-            echo "  aarch64-linux-gnu-gcc not found, downloading Linaro toolchain..."
-            TOOLCHAIN_URL="https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz"
+            # Download cross-compiler toolchain to user home (no root needed)
+            echo "  aarch64-linux-gnu-gcc not found, downloading cross-compiler..."
             TOOLCHAIN_DIR="$HOME/aarch64-toolchain"
             mkdir -p "$TOOLCHAIN_DIR"
-            if curl -sSL --connect-timeout 15 --max-time 120 "$TOOLCHAIN_URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
+
+            # Try multiple sources (China-accessible mirrors first)
+            TOOLCHAIN_URLS=(
+                "https://musl.cc/aarch64-linux-musl-cross.tgz"
+                "https://more.musl.cc/x86_64-linux-musl/aarch64-linux-gnu-cross.tgz"
+                "https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz"
+            )
+
+            DOWNLOADED=false
+            for URL in "${TOOLCHAIN_URLS[@]}"; do
+                echo "  Trying: $URL"
+                if [[ "$URL" == *.tar.xz ]]; then
+                    if curl -sSL --connect-timeout 10 --max-time 300 "$URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR" 2>/dev/null; then
+                        DOWNLOADED=true
+                        break
+                    fi
+                else
+                    if curl -sSL --connect-timeout 10 --max-time 300 "$URL" | tar -xz --strip-components=1 -C "$TOOLCHAIN_DIR" 2>/dev/null; then
+                        DOWNLOADED=true
+                        break
+                    fi
+                fi
+                echo "  Failed, trying next..."
+            done
+
+            if $DOWNLOADED && [ -f "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc" ]; then
                 export PATH="$TOOLCHAIN_DIR/bin:$PATH"
-                echo "  Installed Linaro toolchain to $TOOLCHAIN_DIR"
+                echo "  Installed cross-compiler to $TOOLCHAIN_DIR"
+            elif $DOWNLOADED && [ -f "$TOOLCHAIN_DIR/bin/aarch64-linux-musl-gcc" ]; then
+                # musl.cc provides aarch64-linux-musl-gcc, create a symlink
+                ln -sf "$TOOLCHAIN_DIR/bin/aarch64-linux-musl-gcc" "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc"
+                export PATH="$TOOLCHAIN_DIR/bin:$PATH"
+                echo "  Installed musl cross-compiler (symlinked as aarch64-linux-gnu-gcc)"
             else
-                echo "ERROR: failed to download aarch64 cross-compiler toolchain"
-                echo "  URL: $TOOLCHAIN_URL"
+                echo "ERROR: failed to download aarch64 cross-compiler from all sources"
                 exit 1
             fi
         fi
