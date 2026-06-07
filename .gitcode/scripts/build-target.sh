@@ -79,9 +79,15 @@ if [[ "$BUILD_TARGET" == "aarch64-unknown-linux-gnu" ]]; then
         export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
         export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
     else
-        echo "ERROR: aarch64-linux-gnu-gcc not found, cannot cross-compile for aarch64"
-        echo "  Install with: apt-get install gcc-aarch64-linux-gnu"
-        exit 1
+        # 检查当前机器架构，如果本身是 aarch64 则不需要交叉编译器
+        MACHINE_ARCH=$(uname -m)
+        if [[ "$MACHINE_ARCH" == "aarch64" || "$MACHINE_ARCH" == "arm64" ]]; then
+            echo "  Native aarch64 machine, no cross-compiler needed"
+        else
+            echo "ERROR: aarch64-linux-gnu-gcc not found on $MACHINE_ARCH machine, cannot cross-compile for aarch64"
+            echo "  Install with: apt-get install gcc-aarch64-linux-gnu"
+            exit 1
+        fi
     fi
 fi
 

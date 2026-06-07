@@ -68,9 +68,14 @@ fi
 
 echo "=== Installing aarch64 cross-compilation toolchain ==="
 if command -v apt-get >/dev/null 2>&1; then
-    apt-get install -y gcc-aarch64-linux-gnu 2>/dev/null || echo "  gcc-aarch64-linux-gnu not available"
+    apt-get install -y gcc-aarch64-linux-gnu || echo "  WARN: gcc-aarch64-linux-gnu install failed"
 else
-    dnf install -y gcc-aarch64-linux-gnu 2>/dev/null || yum install -y gcc-aarch64-linux-gnu 2>/dev/null || echo "  gcc-aarch64-linux-gnu not available"
+    # EulerOS: try multiple package name variants
+    dnf install -y gcc-aarch64-linux-gnu 2>&1 || \
+    yum install -y gcc-aarch64-linux-gnu 2>&1 || \
+    dnf install -y cross-gcc-aarch64 2>&1 || \
+    yum install -y cross-gcc-aarch64 2>&1 || \
+    echo "  WARN: aarch64 cross-compiler not available in repos"
 fi
 echo "  aarch64-linux-gnu-gcc: $(command -v aarch64-linux-gnu-gcc || echo 'not found')"
 
