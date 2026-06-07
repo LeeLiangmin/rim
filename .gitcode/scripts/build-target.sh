@@ -74,25 +74,37 @@ fi
 
 # Set CC/linker for aarch64 cross-compilation
 if [[ "$BUILD_TARGET" == "aarch64-unknown-linux-gnu" ]]; then
-    # Add toolchain path if installed via euleros-install-deps.sh
-    if [[ -d "/opt/aarch64-toolchain/bin" ]]; then
-        export PATH="/opt/aarch64-toolchain/bin:$PATH"
+    # Add toolchain path if previously installed
+    if [[ -d "$HOME/aarch64-toolchain/bin" ]]; then
+        export PATH="$HOME/aarch64-toolchain/bin:$PATH"
+    fi
+
+    if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+        # 检查当前机器架构
+        MACHINE_ARCH=$(uname -m)
+        if [[ "$MACHINE_ARCH" == "aarch64" || "$MACHINE_ARCH" == "arm64" ]]; then
+            echo "  Native aarch64 machine, no cross-compiler needed"
+        else
+            # Download Linaro toolchain to user home (no root needed)
+            echo "  aarch64-linux-gnu-gcc not found, downloading Linaro toolchain..."
+            TOOLCHAIN_URL="https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz"
+            TOOLCHAIN_DIR="$HOME/aarch64-toolchain"
+            mkdir -p "$TOOLCHAIN_DIR"
+            if curl -sSL --connect-timeout 15 --max-time 120 "$TOOLCHAIN_URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
+                export PATH="$TOOLCHAIN_DIR/bin:$PATH"
+                echo "  Installed Linaro toolchain to $TOOLCHAIN_DIR"
+            else
+                echo "ERROR: failed to download aarch64 cross-compiler toolchain"
+                echo "  URL: $TOOLCHAIN_URL"
+                exit 1
+            fi
+        fi
     fi
 
     if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
         echo "  Using aarch64-linux-gnu-gcc for cross-compilation"
         export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
         export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-    else
-        # 检查当前机器架构，如果本身是 aarch64 则不需要交叉编译器
-        MACHINE_ARCH=$(uname -m)
-        if [[ "$MACHINE_ARCH" == "aarch64" || "$MACHINE_ARCH" == "arm64" ]]; then
-            echo "  Native aarch64 machine, no cross-compiler needed"
-        else
-            echo "ERROR: aarch64-linux-gnu-gcc not found on $MACHINE_ARCH machine, cannot cross-compile for aarch64"
-            echo "  Install with: apt-get install gcc-aarch64-linux-gnu"
-            exit 1
-        fi
     fi
 fi
 

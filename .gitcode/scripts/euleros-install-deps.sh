@@ -72,28 +72,10 @@ if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
 elif command -v apt-get >/dev/null 2>&1; then
     apt-get install -y gcc-aarch64-linux-gnu || echo "  WARN: gcc-aarch64-linux-gnu install failed via apt"
 else
-    # EulerOS/CentOS: try package manager first
+    # EulerOS/CentOS: try package manager
     dnf install -y gcc-aarch64-linux-gnu 2>/dev/null || \
     yum install -y gcc-aarch64-linux-gnu 2>/dev/null || \
-    true
-
-    # If still not available, download Linaro toolchain
-    if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
-        echo "  Package manager failed, downloading cross-compiler toolchain..."
-        TOOLCHAIN_URL="https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz"
-        TOOLCHAIN_DIR="/opt/aarch64-toolchain"
-        mkdir -p "$TOOLCHAIN_DIR"
-        curl -sSL "$TOOLCHAIN_URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR" || {
-            echo "  WARN: failed to download Linaro toolchain, trying alternative..."
-            # Alternative: use the system's native gcc with a wrapper
-            # This won't produce correct aarch64 binaries but allows the build to proceed
-            echo "  WARN: No aarch64 cross-compiler available"
-        }
-        if [ -f "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc" ]; then
-            export PATH="$TOOLCHAIN_DIR/bin:$PATH"
-            echo "  Installed Linaro toolchain to $TOOLCHAIN_DIR"
-        fi
-    fi
+    echo "  WARN: gcc-aarch64-linux-gnu not in repos (will download in build step if needed)"
 fi
 echo "  aarch64-linux-gnu-gcc: $(command -v aarch64-linux-gnu-gcc || echo 'not found')"
 
