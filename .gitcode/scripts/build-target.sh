@@ -88,7 +88,7 @@ if [[ "$BUILD_TARGET" == "aarch64-unknown-linux-gnu" ]]; then
             # Download cross-compiler toolchain from OBS (internal mirror, fast)
             echo "  aarch64-linux-gnu-gcc not found, downloading cross-compiler from OBS..."
             TOOLCHAIN_DIR="$HOME/aarch64-toolchain"
-            TOOLCHAIN_URL="https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz"
+            TOOLCHAIN_URL="${AARCH64_TOOLCHAIN_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz}"
             mkdir -p "$TOOLCHAIN_DIR"
 
             if curl -sSL --connect-timeout 10 --max-time 300 "$TOOLCHAIN_URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
