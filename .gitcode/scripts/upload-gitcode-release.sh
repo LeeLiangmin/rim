@@ -66,6 +66,6 @@ if [[ ! -f "$RELEASE_SCRIPT" ]]; then
     exit 1
 fi
 
-eval python3 "$RELEASE_SCRIPT" --tag "$TAG" --name "$TAG" --body "Auto release from GitCode CI" --files $FILE_ARGS
+eval python3 "$RELEASE_SCRIPT" --tag "$TAG" --name "$TAG" --body \"Auto release from GitCode CI\" --files $FILE_ARGS
 
 echo "=== Upload completed ==="
