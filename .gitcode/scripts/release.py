@@ -44,6 +44,7 @@ except ModuleNotFoundError:
 
 API_BASE = os.environ.get("GITCODE_BASE_URL", "https://api.gitcode.com/api/v5")
 TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+UPLOAD_TIMEOUT = httpx.Timeout(600.0, connect=30.0)  # 大文件上传用更长超时
 
 
 def load_config(path: Path | None) -> dict:
@@ -164,18 +165,24 @@ class GitCodeRelease:
         不能附加 access_token，因此使用独立的 httpx 请求。
         """
         file_name = filepath.name
-        print(f"📦 准备上传: {file_name}")
+        file_size = filepath.stat().st_size
+        print(f"📦 准备上传: {file_name} ({file_size / 1024 / 1024:.1f} MB)")
 
         upload_url, extra_headers = self.get_upload_url(tag, file_name)
         print(f"   上传地址: {upload_url}")
+        if extra_headers:
+            print(f"   附加 headers: {list(extra_headers.keys())}")
 
         with filepath.open("rb") as f:
+            content = f.read()
+            print(f"   读取完成, 准备 PUT ({len(content)} bytes)...")
             resp = httpx.put(
                 upload_url,
-                content=f.read(),
+                content=content,
                 headers=extra_headers,
-                timeout=TIMEOUT,
+                timeout=UPLOAD_TIMEOUT,
             )
+        print(f"   PUT 响应: HTTP {resp.status_code}, body={resp.text[:200]}")
         resp.raise_for_status()
         print(f"✅ 上传成功: {file_name}")
 
@@ -301,6 +308,24 @@ def main() -> None:
                 print(f"⚠️  文件不存在，跳过: {fp}", file=sys.stderr)
                 continue
             api.upload_file(tag, fp)
+
+        # 验证上传结果
+        print(f"\n{'='*50}")
+        print(f"🔍 Step 2.1: 验证上传结果")
+        print(f"{'='*50}")
+        try:
+            release_data = api.get_release(tag)
+            assets = release_data.get("assets", [])
+            asset_names = {a.get("name", "") for a in assets}
+            uploaded_names = {fp.name for fp in file_paths if fp.exists()}
+            missing = uploaded_names - asset_names
+            if missing:
+                print(f"⚠️  以下文件未在 release assets 中找到: {missing}")
+                print(f"   release 当前 assets: {asset_names}")
+            else:
+                print(f"✅ 所有 {len(uploaded_names)} 个文件已确认出现在 release assets 中")
+        except Exception as e:
+            print(f"⚠️  验证失败（不影响上传）: {e}")
     else:
         print("\n⏭️  Step 2: 无文件需要上传")
 
