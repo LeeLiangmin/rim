@@ -138,9 +138,21 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
     if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
         echo "  Using x86_64-w64-mingw32-gcc for Windows cross-compilation"
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
-        export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
-        # Ensure dlltool is available in PATH
+        # Use rust-lld as the linker (ships with Rust, supports raw-dylib natively)
+        # This avoids the dlltool compatibility issue with old llvm-mingw
+        RUST_SYSROOT=$(rustc --print sysroot 2>/dev/null || true)
+        RUST_LLD="$RUST_SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
+        if [ -f "$RUST_LLD" ]; then
+            echo "  Using rust-lld as linker (avoids dlltool compatibility issues)"
+            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=rust-lld
+            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-Clinker-flavor=gnu-lld-cc -Clinker=x86_64-w64-mingw32-gcc"
+        else
+            echo "  rust-lld not found, using mingw gcc as linker"
+            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
+        fi
+
+        # Ensure dlltool is available in PATH (needed by rustc for raw-dylib)
         MINGW_BIN=$(dirname "$(which x86_64-w64-mingw32-gcc)")
         if ! command -v dlltool >/dev/null 2>&1; then
             if [ -f "$MINGW_BIN/x86_64-w64-mingw32-dlltool" ]; then
@@ -149,28 +161,9 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
                 ln -sf "$MINGW_BIN/llvm-dlltool" "$MINGW_BIN/dlltool"
             fi
         fi
-
-        # Rust 1.78+ uses raw-dylib for windows-gnu which needs a compatible dlltool.
-        # The bundled dlltool in Rust's self-contained dir is the correct one.
-        RUST_SYSROOT=$(rustc --print sysroot 2>/dev/null || true)
-        echo "  Rust sysroot: $RUST_SYSROOT"
-        echo "  Looking for self-contained dlltool..."
-        find "$RUST_SYSROOT/lib/rustlib/x86_64-pc-windows-gnu" -name "*dlltool*" 2>/dev/null || echo "  No dlltool found in Rust sysroot"
-
-        # Use Rust's self-contained linker tools (includes compatible dlltool)
-        SELF_CONTAINED="$RUST_SYSROOT/lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained"
-        if [ -d "$SELF_CONTAINED" ]; then
-            export PATH="$SELF_CONTAINED:$PATH"
-            echo "  Added Rust self-contained tools to PATH: $SELF_CONTAINED"
-        fi
-
-        # Set DLLTOOL env var for rustc
         if command -v dlltool >/dev/null 2>&1; then
             export DLLTOOL="$(which dlltool)"
             echo "  DLLTOOL=$DLLTOOL"
-            dlltool --version 2>&1 | head -1 || true
-        else
-            echo "  WARNING: dlltool not found anywhere"
         fi
     fi
 fi
