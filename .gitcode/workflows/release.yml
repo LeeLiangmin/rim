@@ -29,15 +29,13 @@ jobs:
       - name: Upload
         run: cd repo_workspace && bash -c 'source .gitcode/.env && bash .gitcode/scripts/upload-gitcode-release.sh --tag "${CI_COMMIT_TAG:-$DEFAULT_RELEASE_TAG}" --dist-dir "dist/$DIST_TARGETS_AARCH64"'
 
-  # windows-gnu: disabled - EulerOS 2.0 glibc too old for available mingw cross-compilers
-  # Re-enable when CI runner is upgraded or Windows-native runner is available
-  # windows-gnu:
-  #   runs-on: ubuntu:latest
-  #   steps:
-  #     - uses: checkout-action@0.0.1
-  #     - name: Install deps
-  #       run: cd repo_workspace && bash .gitcode/scripts/euleros-install-deps.sh --windows-cross
-  #     - name: Build
-  #       run: cd repo_workspace && bash -c 'source .gitcode/.env && bash .gitcode/scripts/build-target.sh --build-target "$BUILD_TARGET_WINDOWS" --dist-targets "$DIST_TARGETS_WINDOWS" --skip-gui'
-  #     - name: Upload
-  #       run: cd repo_workspace && bash -c 'source .gitcode/.env && bash .gitcode/scripts/upload-gitcode-release.sh --tag "${CI_COMMIT_TAG:-$DEFAULT_RELEASE_TAG}" --dist-dir "dist/${DIST_TARGETS_WINDOWS%%,*}"'
+  windows-gnu:
+    runs-on: ubuntu:latest
+    steps:
+      - uses: checkout-action@0.0.1
+      - name: Install deps
+        run: cd repo_workspace && bash .gitcode/scripts/euleros-install-deps.sh --windows-cross
+      - name: Build
+        run: cd repo_workspace && bash -c 'source .gitcode/.env && bash .gitcode/scripts/build-target.sh --build-target "$BUILD_TARGET_WINDOWS" --dist-targets "$DIST_TARGETS_WINDOWS" --skip-gui'
+      - name: Upload
+        run: cd repo_workspace && bash -c 'source .gitcode/.env && bash .gitcode/scripts/upload-gitcode-release.sh --tag "${CI_COMMIT_TAG:-$DEFAULT_RELEASE_TAG}" --dist-dir "dist/${DIST_TARGETS_WINDOWS%%,*}"'

@@ -139,6 +139,20 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         echo "  Using x86_64-w64-mingw32-gcc for Windows cross-compilation"
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
+
+        # Rust's raw-dylib feature needs dlltool to generate import libraries
+        # Ensure dlltool is available (llvm-mingw provides it with a prefix)
+        if ! command -v dlltool >/dev/null 2>&1; then
+            MINGW_BIN=$(dirname "$(which x86_64-w64-mingw32-gcc)")
+            if [ -f "$MINGW_BIN/x86_64-w64-mingw32-dlltool" ]; then
+                ln -sf "$MINGW_BIN/x86_64-w64-mingw32-dlltool" "$MINGW_BIN/dlltool"
+                echo "  Created dlltool symlink"
+            elif [ -f "$MINGW_BIN/llvm-dlltool" ]; then
+                ln -sf "$MINGW_BIN/llvm-dlltool" "$MINGW_BIN/dlltool"
+                echo "  Created dlltool symlink (llvm-dlltool)"
+            fi
+        fi
+        echo "  dlltool: $(command -v dlltool || echo 'not found')"
     fi
 fi
 
