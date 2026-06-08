@@ -140,19 +140,38 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
-        # Rust's raw-dylib feature needs dlltool to generate import libraries
-        # Ensure dlltool is available (llvm-mingw provides it with a prefix)
+        # Ensure dlltool is available in PATH
+        MINGW_BIN=$(dirname "$(which x86_64-w64-mingw32-gcc)")
         if ! command -v dlltool >/dev/null 2>&1; then
-            MINGW_BIN=$(dirname "$(which x86_64-w64-mingw32-gcc)")
             if [ -f "$MINGW_BIN/x86_64-w64-mingw32-dlltool" ]; then
                 ln -sf "$MINGW_BIN/x86_64-w64-mingw32-dlltool" "$MINGW_BIN/dlltool"
-                echo "  Created dlltool symlink"
             elif [ -f "$MINGW_BIN/llvm-dlltool" ]; then
                 ln -sf "$MINGW_BIN/llvm-dlltool" "$MINGW_BIN/dlltool"
-                echo "  Created dlltool symlink (llvm-dlltool)"
             fi
         fi
-        echo "  dlltool: $(command -v dlltool || echo 'not found')"
+
+        # Rust 1.78+ uses raw-dylib for windows-gnu which needs a compatible dlltool.
+        # The bundled dlltool in Rust's self-contained dir is the correct one.
+        RUST_SYSROOT=$(rustc --print sysroot 2>/dev/null || true)
+        echo "  Rust sysroot: $RUST_SYSROOT"
+        echo "  Looking for self-contained dlltool..."
+        find "$RUST_SYSROOT/lib/rustlib/x86_64-pc-windows-gnu" -name "*dlltool*" 2>/dev/null || echo "  No dlltool found in Rust sysroot"
+
+        # Use Rust's self-contained linker tools (includes compatible dlltool)
+        SELF_CONTAINED="$RUST_SYSROOT/lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained"
+        if [ -d "$SELF_CONTAINED" ]; then
+            export PATH="$SELF_CONTAINED:$PATH"
+            echo "  Added Rust self-contained tools to PATH: $SELF_CONTAINED"
+        fi
+
+        # Set DLLTOOL env var for rustc
+        if command -v dlltool >/dev/null 2>&1; then
+            export DLLTOOL="$(which dlltool)"
+            echo "  DLLTOOL=$DLLTOOL"
+            dlltool --version 2>&1 | head -1 || true
+        else
+            echo "  WARNING: dlltool not found anywhere"
+        fi
     fi
 fi
 
