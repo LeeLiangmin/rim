@@ -138,21 +138,9 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
     if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
         echo "  Using x86_64-w64-mingw32-gcc for Windows cross-compilation"
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
+        export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
-        # Use rust-lld as the linker (ships with Rust, supports raw-dylib natively)
-        # This avoids the dlltool compatibility issue with old llvm-mingw
-        RUST_SYSROOT=$(rustc --print sysroot 2>/dev/null || true)
-        RUST_LLD="$RUST_SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
-        if [ -f "$RUST_LLD" ]; then
-            echo "  Using rust-lld as linker (avoids dlltool compatibility issues)"
-            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=rust-lld
-            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-Clinker-flavor=gnu-lld-cc -Clinker=x86_64-w64-mingw32-gcc"
-        else
-            echo "  rust-lld not found, using mingw gcc as linker"
-            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
-        fi
-
-        # Ensure dlltool is available in PATH (needed by rustc for raw-dylib)
+        # Ensure dlltool is available in PATH
         MINGW_BIN=$(dirname "$(which x86_64-w64-mingw32-gcc)")
         if ! command -v dlltool >/dev/null 2>&1; then
             if [ -f "$MINGW_BIN/x86_64-w64-mingw32-dlltool" ]; then
@@ -161,10 +149,16 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
                 ln -sf "$MINGW_BIN/llvm-dlltool" "$MINGW_BIN/dlltool"
             fi
         fi
-        if command -v dlltool >/dev/null 2>&1; then
-            export DLLTOOL="$(which dlltool)"
-            echo "  DLLTOOL=$DLLTOOL"
-        fi
+
+        # Debug: show Rust's windows-gnu target files and dlltool situation
+        RUST_SYSROOT=$(rustc --print sysroot 2>/dev/null || true)
+        echo "  Rust sysroot: $RUST_SYSROOT"
+        echo "  Rust version: $(rustc --version)"
+        echo "  Contents of windows-gnu target dir:"
+        find "$RUST_SYSROOT/lib/rustlib/x86_64-pc-windows-gnu" -type f 2>/dev/null | head -20 || echo "  (no x86_64-pc-windows-gnu dir)"
+        echo "  dlltool in PATH: $(which dlltool 2>/dev/null || echo 'not found')"
+        echo "  dlltool test run:"
+        dlltool --version 2>&1 || echo "  dlltool execution failed"
     fi
 fi
 
