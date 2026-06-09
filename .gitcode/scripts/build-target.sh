@@ -151,23 +151,36 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         # rust-lld supports "-flavor dlltool" mode since LLVM 17.
         RUST_SYSROOT=$(rustc --print sysroot)
         RUST_LLD="$RUST_SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
+        echo "  Rust sysroot: $RUST_SYSROOT"
+        echo "  Looking for rust-lld at: $RUST_LLD"
         if [ -f "$RUST_LLD" ]; then
-            echo "  Found rust-lld: $RUST_LLD"
-            # Create a dlltool wrapper that invokes rust-lld in dlltool mode
-            WRAPPER="$HOME/mingw-toolchain/bin/dlltool"
-            cat > "$WRAPPER" <<'DLLTOOL_WRAPPER'
-#!/bin/sh
-exec RUST_LLD_PATH -flavor dlltool "$@"
-DLLTOOL_WRAPPER
-            sed -i "s|RUST_LLD_PATH|$RUST_LLD|" "$WRAPPER"
+            echo "  Found rust-lld, creating dlltool wrapper..."
+            # Overwrite dlltool in mingw PATH with a wrapper using rust-lld
+            MINGW_BIN=$(dirname "$(which x86_64-w64-mingw32-gcc)")
+            WRAPPER="$MINGW_BIN/dlltool"
+            echo "#!/bin/sh" > "$WRAPPER"
+            echo "exec \"$RUST_LLD\" -flavor dlltool \"\$@\"" >> "$WRAPPER"
             chmod +x "$WRAPPER"
-            export DLLTOOL="$WRAPPER"
-            echo "  Created dlltool wrapper using rust-lld"
-            echo "  Testing: $WRAPPER --version"
-            "$WRAPPER" --version 2>&1 | head -2 || true
+            echo "  Created dlltool wrapper at: $WRAPPER"
+            echo "  Testing wrapper:"
+            "$WRAPPER" --version 2>&1 | head -2 || echo "  (dlltool --version not supported, but -flavor dlltool should work)"
         else
-            echo "  WARNING: rust-lld not found at $RUST_LLD"
-            echo "  dlltool may not work correctly for raw-dylib"
+            # Try alternative paths
+            ALT_LLD=$(find "$RUST_SYSROOT" -name "rust-lld" -type f 2>/dev/null | head -1)
+            if [ -n "$ALT_LLD" ]; then
+                echo "  Found rust-lld at alternative path: $ALT_LLD"
+                MINGW_BIN=$(dirname "$(which x86_64-w64-mingw32-gcc)")
+                WRAPPER="$MINGW_BIN/dlltool"
+                echo "#!/bin/sh" > "$WRAPPER"
+                echo "exec \"$ALT_LLD\" -flavor dlltool \"\$@\"" >> "$WRAPPER"
+                chmod +x "$WRAPPER"
+                echo "  Created dlltool wrapper at: $WRAPPER"
+            else
+                echo "  WARNING: rust-lld not found anywhere in sysroot"
+                echo "  Available files in sysroot bin:"
+                find "$RUST_SYSROOT/lib/rustlib" -name "rust-lld*" -o -name "*lld*" 2>/dev/null || echo "  none"
+                echo "  raw-dylib may fail without compatible dlltool"
+            fi
         fi
     fi
 fi
