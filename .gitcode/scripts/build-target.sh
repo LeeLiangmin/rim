@@ -145,25 +145,23 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
-        # Ensure dlltool is available in PATH
-        MINGW_BIN=$(dirname "$(which x86_64-w64-mingw32-gcc)")
-        if ! command -v dlltool >/dev/null 2>&1; then
-            if [ -f "$MINGW_BIN/x86_64-w64-mingw32-dlltool" ]; then
-                ln -sf "$MINGW_BIN/x86_64-w64-mingw32-dlltool" "$MINGW_BIN/dlltool"
-            elif [ -f "$MINGW_BIN/llvm-dlltool" ]; then
-                ln -sf "$MINGW_BIN/llvm-dlltool" "$MINGW_BIN/dlltool"
-            fi
+        # Rust 1.78+ uses raw-dylib for windows-gnu which requires a compatible dlltool.
+        # The llvm-mingw 2022 dlltool (LLVM 15) is incompatible with Rust 1.78+.
+        # Workaround: install and use Rust 1.77 for windows-gnu cross-compilation.
+        CURRENT_RUST_VERSION=$(rustc --version | grep -oP '\d+\.\d+\.\d+')
+        RUST_MAJOR_MINOR=$(echo "$CURRENT_RUST_VERSION" | cut -d. -f1,2)
+        if [[ "$(echo "$RUST_MAJOR_MINOR >= 1.78" | bc 2>/dev/null)" == "1" ]] 2>/dev/null || \
+           [[ "${RUST_MAJOR_MINOR%%.*}" -ge 2 ]] || \
+           [[ "${RUST_MAJOR_MINOR#*.}" -ge 78 && "${RUST_MAJOR_MINOR%%.*}" -eq 1 ]]; then
+            echo "  Rust $CURRENT_RUST_VERSION detected (>= 1.78, raw-dylib enabled)"
+            echo "  Installing Rust 1.77.0 toolchain for windows-gnu cross-compilation..."
+            rustup toolchain install 1.77.0 --profile minimal 2>/dev/null || true
+            rustup target add x86_64-pc-windows-gnu --toolchain 1.77.0 2>/dev/null || true
+            # Override the toolchain for this build via env var
+            export RUSTUP_TOOLCHAIN=1.77.0
+            echo "  Using Rust 1.77.0 (avoids raw-dylib/dlltool incompatibility)"
+            rustc --version
         fi
-
-        # Debug: show Rust's windows-gnu target files and dlltool situation
-        RUST_SYSROOT=$(rustc --print sysroot 2>/dev/null || true)
-        echo "  Rust sysroot: $RUST_SYSROOT"
-        echo "  Rust version: $(rustc --version)"
-        echo "  Contents of windows-gnu target dir:"
-        find "$RUST_SYSROOT/lib/rustlib/x86_64-pc-windows-gnu" -type f 2>/dev/null | head -20 || echo "  (no x86_64-pc-windows-gnu dir)"
-        echo "  dlltool in PATH: $(which dlltool 2>/dev/null || echo 'not found')"
-        echo "  dlltool test run:"
-        dlltool --version 2>&1 || echo "  dlltool execution failed"
     fi
 fi
 
