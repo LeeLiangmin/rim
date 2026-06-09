@@ -62,7 +62,7 @@ if $INSTALL_WIN_CROSS; then
     if command -v apt-get >/dev/null 2>&1; then
         install_pkg mingw-w64 gcc-mingw-w64-x86-64
     else
-        install_pkg mingw64-gcc mingw64-headers mingw64-winpthreads mingw64-crt
+        install_pkg mingw64-gcc mingw64-headers mingw64-winpthreads mingw64-crt mingw64-binutils
     fi
 fi
 
