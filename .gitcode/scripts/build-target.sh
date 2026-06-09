@@ -146,40 +146,40 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
         # Rust 1.78+ uses raw-dylib for windows-gnu which needs a compatible dlltool.
-        # Install llvm-tools-preview (may not include llvm-dlltool on Linux hosts).
+        # First try rustup llvm-tools-preview, then download from OBS.
         echo "  Installing llvm-tools-preview for compatible llvm-dlltool..."
         rustup component add llvm-tools-preview 2>&1 || echo "  WARN: llvm-tools-preview install failed"
 
-        # Find llvm-dlltool from rustup sysroot, or download from Huawei mirror
-        unset DLLTOOL
+        # Find llvm-dlltool from rustup sysroot or OBS cache
+        export DLLTOOL=""
         RUST_SYSROOT=$(rustc --print sysroot)
         LLVM_DLLTOOL="$RUST_SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-dlltool"
         if [ -f "$LLVM_DLLTOOL" ]; then
             echo "  Found llvm-dlltool in rustup sysroot: $LLVM_DLLTOOL"
             export DLLTOOL="$LLVM_DLLTOOL"
         else
-            # Download llvm-dlltool from Huawei Cloud mirror (fast in CCE) and cache it
+            # Download from OBS (user should upload there) and cache locally
             LLVM_CACHE_DIR="$HOME/.cache/llvm-dlltool"
             LLVM_CACHE_BIN="$LLVM_CACHE_DIR/bin/llvm-dlltool"
-            LLVM_DLLTOOL_URL="${LLVM_DLLTOOL_URL:-https://mirrors.huaweicloud.com/llvm/LLVM-20.1.0-Linux-X64.tar.xz}"
+            LLVM_DLLTOOL_URL="${LLVM_DLLTOOL_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/toolset/llvm-dlltool/1.0.0/llvm-dlltool-x86_64-linux}"
             if [ ! -f "$LLVM_CACHE_BIN" ]; then
-                echo "  Downloading llvm-dlltool from Huawei Cloud mirror..."
-                mkdir -p "$LLVM_CACHE_DIR"
-                if curl -L --connect-timeout 30 --max-time 600 "$LLVM_DLLTOOL_URL" | tar -xJ -C "$LLVM_CACHE_DIR" "bin/llvm-dlltool" 2>/dev/null; then
+                echo "  Downloading llvm-dlltool from OBS..."
+                mkdir -p "$(dirname "$LLVM_CACHE_BIN")"
+                if curl -fL --connect-timeout 30 --max-time 120 -o "$LLVM_CACHE_BIN" "$LLVM_DLLTOOL_URL" 2>/dev/null; then
                     chmod +x "$LLVM_CACHE_BIN"
                     echo "  Downloaded llvm-dlltool to $LLVM_CACHE_BIN"
                 else
-                    echo "  WARN: failed to download llvm-dlltool from Huawei mirror"
+                    echo "  WARN: failed to download llvm-dlltool from OBS"
                 fi
             fi
             if [ -f "$LLVM_CACHE_BIN" ]; then
-                echo "  Found llvm-dlltool from LLVM release: $LLVM_CACHE_BIN"
+                echo "  Found llvm-dlltool: $LLVM_CACHE_BIN"
                 export DLLTOOL="$LLVM_CACHE_BIN"
             else
                 echo "  ERROR: no llvm-dlltool available (raw-dylib builds require it)"
             fi
         fi
-        echo "  DLLTOOL=$DLLTOOL"
+        echo "  DLLTOOL=${DLLTOOL:-}"
     fi
 fi
 
