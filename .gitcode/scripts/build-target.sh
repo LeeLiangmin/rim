@@ -150,17 +150,31 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         echo "  Installing llvm-tools-preview for compatible llvm-dlltool..."
         rustup component add llvm-tools-preview 2>&1 || echo "  WARN: llvm-tools-preview install failed"
 
-        # Find llvm-dlltool in rustup toolchain
+        # Find llvm-dlltool: try rustup toolchain first, then fall back to mingw dlltool
+        unset DLLTOOL
         RUST_SYSROOT=$(rustc --print sysroot)
         LLVM_DLLTOOL="$RUST_SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-dlltool"
         if [ -f "$LLVM_DLLTOOL" ]; then
             echo "  Found llvm-dlltool: $LLVM_DLLTOOL"
             export DLLTOOL="$LLVM_DLLTOOL"
-            echo "  DLLTOOL=$DLLTOOL"
         else
             echo "  WARNING: llvm-dlltool not found at $LLVM_DLLTOOL"
-            find "$RUST_SYSROOT/lib/rustlib" -name "*dlltool*" 2>/dev/null || echo "  (no dlltool in sysroot)"
+            # Search entire sysroot for llvm-dlltool
+            LLVM_DLLTOOL_ALT=$(find "$RUST_SYSROOT" -name "llvm-dlltool*" -type f 2>/dev/null | head -1)
+            if [ -n "$LLVM_DLLTOOL_ALT" ]; then
+                echo "  Found llvm-dlltool (alt): $LLVM_DLLTOOL_ALT"
+                export DLLTOOL="$LLVM_DLLTOOL_ALT"
+            elif command -v x86_64-w64-mingw32-dlltool >/dev/null 2>&1; then
+                echo "  llvm-dlltool not found, using mingw dlltool: $(which x86_64-w64-mingw32-dlltool)"
+                export DLLTOOL=$(which x86_64-w64-mingw32-dlltool)
+            elif command -v dlltool >/dev/null 2>&1; then
+                echo "  llvm-dlltool not found, using dlltool from PATH: $(which dlltool)"
+                export DLLTOOL=$(which dlltool)
+            else
+                echo "  WARNING: no dlltool found anywhere (raw-dylib builds may fail)"
+            fi
         fi
+        echo "  DLLTOOL=$DLLTOOL"
     fi
 fi
 
