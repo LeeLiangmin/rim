@@ -145,12 +145,22 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
-        # Rust 1.78+ uses raw-dylib for windows-gnu which requires a compatible dlltool.
-        # The llvm-mingw 2022 dlltool (LLVM 15) is incompatible with Rust 1.78+.
-        # Solution: use -Clink-self-contained=yes to tell rustc to use its bundled
-        # LLVM components for import lib generation (no external dlltool needed).
-        echo "  Enabling link-self-contained for raw-dylib import lib generation"
-        export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-Clink-self-contained=yes"
+        # Rust 1.78+ uses raw-dylib for windows-gnu which needs a compatible dlltool.
+        # Install llvm-tools-preview to get the official llvm-dlltool (same LLVM as rustc).
+        echo "  Installing llvm-tools-preview for compatible llvm-dlltool..."
+        rustup component add llvm-tools-preview 2>&1 || echo "  WARN: llvm-tools-preview install failed"
+
+        # Find llvm-dlltool in rustup toolchain
+        RUST_SYSROOT=$(rustc --print sysroot)
+        LLVM_DLLTOOL="$RUST_SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-dlltool"
+        if [ -f "$LLVM_DLLTOOL" ]; then
+            echo "  Found llvm-dlltool: $LLVM_DLLTOOL"
+            export DLLTOOL="$LLVM_DLLTOOL"
+            echo "  DLLTOOL=$DLLTOOL"
+        else
+            echo "  WARNING: llvm-dlltool not found at $LLVM_DLLTOOL"
+            find "$RUST_SYSROOT/lib/rustlib" -name "*dlltool*" 2>/dev/null || echo "  (no dlltool in sysroot)"
+        fi
     fi
 fi
 
