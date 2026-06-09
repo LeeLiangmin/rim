@@ -150,7 +150,7 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         echo "  Installing llvm-tools-preview for compatible llvm-dlltool..."
         rustup component add llvm-tools-preview 2>&1 || echo "  WARN: llvm-tools-preview install failed"
 
-        # Find llvm-dlltool: try rustup toolchain first, then fall back to mingw dlltool
+        # Find llvm-dlltool: try rustup, then LLVM release, then system PATH
         unset DLLTOOL
         RUST_SYSROOT=$(rustc --print sysroot)
         RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
@@ -165,30 +165,45 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
             if [ -n "$LLVM_DLLTOOL_ALT" ]; then
                 echo "  Found llvm-dlltool (alt): $LLVM_DLLTOOL_ALT"
                 export DLLTOOL="$LLVM_DLLTOOL_ALT"
-            elif command -v llvm-dlltool >/dev/null 2>&1; then
-                echo "  Found llvm-dlltool from system PATH: $(which llvm-dlltool)"
-                export DLLTOOL=$(which llvm-dlltool)
-            elif command -v x86_64-w64-mingw32-dlltool >/dev/null 2>&1; then
-                echo "  llvm-dlltool not found, using mingw dlltool: $(which x86_64-w64-mingw32-dlltool)"
-                export DLLTOOL=$(which x86_64-w64-mingw32-dlltool)
             else
-                echo "  llvm-dlltool and mingw dlltool not found, trying to install..."
-                # Try installing mingw64-binutils via system package manager
-                if command -v yum >/dev/null 2>&1; then
-                    yum install -y mingw64-binutils 2>/dev/null || true
-                elif command -v dnf >/dev/null 2>&1; then
-                    dnf install -y mingw64-binutils 2>/dev/null || true
-                elif command -v apt-get >/dev/null 2>&1; then
-                    apt-get install -y mingw-w64 2>/dev/null || true
+                # Try downloading llvm-dlltool from official LLVM release (cached)
+                LLVM_CACHE_DIR="$HOME/.cache/llvm-dlltool"
+                LLVM_CACHE_BIN="$LLVM_CACHE_DIR/bin/llvm-dlltool"
+                LLVM_DLLTOOL_URL="${LLVM_DLLTOOL_URL:-https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.0/LLVM-20.1.0-Linux-X64.tar.xz}"
+                if [ ! -f "$LLVM_CACHE_BIN" ]; then
+                    echo "  Downloading llvm-dlltool from LLVM release..."
+                    mkdir -p "$LLVM_CACHE_DIR"
+                    if curl -L --connect-timeout 30 --max-time 120 "$LLVM_DLLTOOL_URL" | tar -xJ -C "$LLVM_CACHE_DIR" "bin/llvm-dlltool" 2>/dev/null; then
+                        chmod +x "$LLVM_CACHE_BIN"
+                        echo "  Downloaded llvm-dlltool to $LLVM_CACHE_BIN"
+                    else
+                        echo "  WARN: failed to download llvm-dlltool from LLVM release"
+                    fi
                 fi
-                if command -v x86_64-w64-mingw32-dlltool >/dev/null 2>&1; then
-                    echo "  Found mingw dlltool after package install: $(which x86_64-w64-mingw32-dlltool)"
+                if [ -f "$LLVM_CACHE_BIN" ]; then
+                    echo "  Found llvm-dlltool from LLVM release: $LLVM_CACHE_BIN"
+                    export DLLTOOL="$LLVM_CACHE_BIN"
+                elif command -v x86_64-w64-mingw32-dlltool >/dev/null 2>&1; then
+                    echo "  llvm-dlltool not found, using mingw dlltool: $(which x86_64-w64-mingw32-dlltool)"
                     export DLLTOOL=$(which x86_64-w64-mingw32-dlltool)
-                elif command -v dlltool >/dev/null 2>&1; then
-                    echo "  Using dlltool from PATH: $(which dlltool)"
-                    export DLLTOOL=$(which dlltool)
                 else
-                    echo "  WARNING: no dlltool found anywhere (raw-dylib builds may fail)"
+                    echo "  llvm-dlltool and mingw dlltool not found, trying to install..."
+                    if command -v yum >/dev/null 2>&1; then
+                        yum install -y mingw64-binutils 2>/dev/null || true
+                    elif command -v dnf >/dev/null 2>&1; then
+                        dnf install -y mingw64-binutils 2>/dev/null || true
+                    elif command -v apt-get >/dev/null 2>&1; then
+                        apt-get install -y mingw-w64 2>/dev/null || true
+                    fi
+                    if command -v x86_64-w64-mingw32-dlltool >/dev/null 2>&1; then
+                        echo "  Found mingw dlltool after package install: $(which x86_64-w64-mingw32-dlltool)"
+                        export DLLTOOL=$(which x86_64-w64-mingw32-dlltool)
+                    elif command -v dlltool >/dev/null 2>&1; then
+                        echo "  Using dlltool from PATH: $(which dlltool)"
+                        export DLLTOOL=$(which dlltool)
+                    else
+                        echo "  WARNING: no dlltool found anywhere (raw-dylib builds may fail)"
+                    fi
                 fi
             fi
         fi
