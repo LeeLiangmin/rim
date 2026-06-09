@@ -147,41 +147,10 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
 
         # Rust 1.78+ uses raw-dylib for windows-gnu which requires a compatible dlltool.
         # The llvm-mingw 2022 dlltool (LLVM 15) is incompatible with Rust 1.78+.
-        # Solution: use Rust's own rust-lld (LLVM 19, static binary) as dlltool.
-        # rust-lld supports "-flavor dlltool" mode since LLVM 17.
-        RUST_SYSROOT=$(rustc --print sysroot)
-        RUST_LLD="$RUST_SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
-        echo "  Rust sysroot: $RUST_SYSROOT"
-        echo "  Looking for rust-lld at: $RUST_LLD"
-        if [ -f "$RUST_LLD" ]; then
-            echo "  Found rust-lld, creating dlltool wrapper..."
-            # Overwrite dlltool in mingw PATH with a wrapper using rust-lld
-            MINGW_BIN=$(dirname "$(which x86_64-w64-mingw32-gcc)")
-            WRAPPER="$MINGW_BIN/dlltool"
-            echo "#!/bin/sh" > "$WRAPPER"
-            echo "exec \"$RUST_LLD\" -flavor dlltool \"\$@\"" >> "$WRAPPER"
-            chmod +x "$WRAPPER"
-            echo "  Created dlltool wrapper at: $WRAPPER"
-            echo "  Testing wrapper:"
-            "$WRAPPER" --version 2>&1 | head -2 || echo "  (dlltool --version not supported, but -flavor dlltool should work)"
-        else
-            # Try alternative paths
-            ALT_LLD=$(find "$RUST_SYSROOT" -name "rust-lld" -type f 2>/dev/null | head -1)
-            if [ -n "$ALT_LLD" ]; then
-                echo "  Found rust-lld at alternative path: $ALT_LLD"
-                MINGW_BIN=$(dirname "$(which x86_64-w64-mingw32-gcc)")
-                WRAPPER="$MINGW_BIN/dlltool"
-                echo "#!/bin/sh" > "$WRAPPER"
-                echo "exec \"$ALT_LLD\" -flavor dlltool \"\$@\"" >> "$WRAPPER"
-                chmod +x "$WRAPPER"
-                echo "  Created dlltool wrapper at: $WRAPPER"
-            else
-                echo "  WARNING: rust-lld not found anywhere in sysroot"
-                echo "  Available files in sysroot bin:"
-                find "$RUST_SYSROOT/lib/rustlib" -name "rust-lld*" -o -name "*lld*" 2>/dev/null || echo "  none"
-                echo "  raw-dylib may fail without compatible dlltool"
-            fi
-        fi
+        # Solution: use -Clink-self-contained=yes to tell rustc to use its bundled
+        # LLVM components for import lib generation (no external dlltool needed).
+        echo "  Enabling link-self-contained for raw-dylib import lib generation"
+        export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-Clink-self-contained=yes"
     fi
 fi
 
