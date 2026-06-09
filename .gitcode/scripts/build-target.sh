@@ -146,65 +146,37 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
         # Rust 1.78+ uses raw-dylib for windows-gnu which needs a compatible dlltool.
-        # Install llvm-tools-preview to get the official llvm-dlltool (same LLVM as rustc).
+        # Install llvm-tools-preview (may not include llvm-dlltool on Linux hosts).
         echo "  Installing llvm-tools-preview for compatible llvm-dlltool..."
         rustup component add llvm-tools-preview 2>&1 || echo "  WARN: llvm-tools-preview install failed"
 
-        # Find llvm-dlltool: try rustup, then LLVM release, then system PATH
+        # Find llvm-dlltool from rustup sysroot, or download from Huawei mirror
         unset DLLTOOL
         RUST_SYSROOT=$(rustc --print sysroot)
-        RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
         LLVM_DLLTOOL="$RUST_SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-dlltool"
         if [ -f "$LLVM_DLLTOOL" ]; then
-            echo "  Found llvm-dlltool: $LLVM_DLLTOOL"
+            echo "  Found llvm-dlltool in rustup sysroot: $LLVM_DLLTOOL"
             export DLLTOOL="$LLVM_DLLTOOL"
         else
-            echo "  WARNING: llvm-dlltool not found at $LLVM_DLLTOOL"
-            # Search broader paths for llvm-dlltool
-            LLVM_DLLTOOL_ALT=$(find "$RUST_SYSROOT" "$RUSTUP_HOME" -name "llvm-dlltool*" -type f 2>/dev/null | head -1)
-            if [ -n "$LLVM_DLLTOOL_ALT" ]; then
-                echo "  Found llvm-dlltool (alt): $LLVM_DLLTOOL_ALT"
-                export DLLTOOL="$LLVM_DLLTOOL_ALT"
-            else
-                # Try downloading llvm-dlltool from official LLVM release (cached)
-                LLVM_CACHE_DIR="$HOME/.cache/llvm-dlltool"
-                LLVM_CACHE_BIN="$LLVM_CACHE_DIR/bin/llvm-dlltool"
-                LLVM_DLLTOOL_URL="${LLVM_DLLTOOL_URL:-https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.0/LLVM-20.1.0-Linux-X64.tar.xz}"
-                if [ ! -f "$LLVM_CACHE_BIN" ]; then
-                    echo "  Downloading llvm-dlltool from LLVM release..."
-                    mkdir -p "$LLVM_CACHE_DIR"
-                    if curl -L --connect-timeout 30 --max-time 120 "$LLVM_DLLTOOL_URL" | tar -xJ -C "$LLVM_CACHE_DIR" "bin/llvm-dlltool" 2>/dev/null; then
-                        chmod +x "$LLVM_CACHE_BIN"
-                        echo "  Downloaded llvm-dlltool to $LLVM_CACHE_BIN"
-                    else
-                        echo "  WARN: failed to download llvm-dlltool from LLVM release"
-                    fi
-                fi
-                if [ -f "$LLVM_CACHE_BIN" ]; then
-                    echo "  Found llvm-dlltool from LLVM release: $LLVM_CACHE_BIN"
-                    export DLLTOOL="$LLVM_CACHE_BIN"
-                elif command -v x86_64-w64-mingw32-dlltool >/dev/null 2>&1; then
-                    echo "  llvm-dlltool not found, using mingw dlltool: $(which x86_64-w64-mingw32-dlltool)"
-                    export DLLTOOL=$(which x86_64-w64-mingw32-dlltool)
+            # Download llvm-dlltool from Huawei Cloud mirror (fast in CCE) and cache it
+            LLVM_CACHE_DIR="$HOME/.cache/llvm-dlltool"
+            LLVM_CACHE_BIN="$LLVM_CACHE_DIR/bin/llvm-dlltool"
+            LLVM_DLLTOOL_URL="${LLVM_DLLTOOL_URL:-https://mirrors.huaweicloud.com/llvm/LLVM-20.1.0-Linux-X64.tar.xz}"
+            if [ ! -f "$LLVM_CACHE_BIN" ]; then
+                echo "  Downloading llvm-dlltool from Huawei Cloud mirror..."
+                mkdir -p "$LLVM_CACHE_DIR"
+                if curl -L --connect-timeout 30 --max-time 600 "$LLVM_DLLTOOL_URL" | tar -xJ -C "$LLVM_CACHE_DIR" "bin/llvm-dlltool" 2>/dev/null; then
+                    chmod +x "$LLVM_CACHE_BIN"
+                    echo "  Downloaded llvm-dlltool to $LLVM_CACHE_BIN"
                 else
-                    echo "  llvm-dlltool and mingw dlltool not found, trying to install..."
-                    if command -v yum >/dev/null 2>&1; then
-                        yum install -y mingw64-binutils 2>/dev/null || true
-                    elif command -v dnf >/dev/null 2>&1; then
-                        dnf install -y mingw64-binutils 2>/dev/null || true
-                    elif command -v apt-get >/dev/null 2>&1; then
-                        apt-get install -y mingw-w64 2>/dev/null || true
-                    fi
-                    if command -v x86_64-w64-mingw32-dlltool >/dev/null 2>&1; then
-                        echo "  Found mingw dlltool after package install: $(which x86_64-w64-mingw32-dlltool)"
-                        export DLLTOOL=$(which x86_64-w64-mingw32-dlltool)
-                    elif command -v dlltool >/dev/null 2>&1; then
-                        echo "  Using dlltool from PATH: $(which dlltool)"
-                        export DLLTOOL=$(which dlltool)
-                    else
-                        echo "  WARNING: no dlltool found anywhere (raw-dylib builds may fail)"
-                    fi
+                    echo "  WARN: failed to download llvm-dlltool from Huawei mirror"
                 fi
+            fi
+            if [ -f "$LLVM_CACHE_BIN" ]; then
+                echo "  Found llvm-dlltool from LLVM release: $LLVM_CACHE_BIN"
+                export DLLTOOL="$LLVM_CACHE_BIN"
+            else
+                echo "  ERROR: no llvm-dlltool available (raw-dylib builds require it)"
             fi
         fi
         echo "  DLLTOOL=$DLLTOOL"
