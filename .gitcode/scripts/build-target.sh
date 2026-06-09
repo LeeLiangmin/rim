@@ -52,6 +52,11 @@ grep -A5 '\[workspace\]' Cargo.toml | head -6
 export GIT_HTTP_LOW_SPEED_LIMIT="${GIT_HTTP_LOW_SPEED_LIMIT:-1000}"
 export GIT_HTTP_LOW_SPEED_TIME="${GIT_HTTP_LOW_SPEED_TIME:-30}"
 
+# Restore cargo env early (needed for rustc --print sysroot in cross-compilation setup)
+if [[ -f "$HOME/.cargo/env" ]]; then
+    source "$HOME/.cargo/env"
+fi
+
 # Set CC for musl cross-compilation (openssl-sys needs this)
 if [[ "$BUILD_TARGET" == *"musl"* ]]; then
     if ! command -v musl-gcc >/dev/null 2>&1; then
@@ -160,11 +165,6 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         echo "  dlltool test run:"
         dlltool --version 2>&1 || echo "  dlltool execution failed"
     fi
-fi
-
-# Restore cargo env if available
-if [[ -f "$HOME/.cargo/env" ]]; then
-    source "$HOME/.cargo/env"
 fi
 
 echo "=== Vendoring offline packages ==="
