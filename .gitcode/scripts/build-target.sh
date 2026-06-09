@@ -147,20 +147,27 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
 
         # Rust 1.78+ uses raw-dylib for windows-gnu which requires a compatible dlltool.
         # The llvm-mingw 2022 dlltool (LLVM 15) is incompatible with Rust 1.78+.
-        # Workaround: install and use Rust 1.77 for windows-gnu cross-compilation.
-        CURRENT_RUST_VERSION=$(rustc --version | grep -oP '\d+\.\d+\.\d+')
-        RUST_MAJOR_MINOR=$(echo "$CURRENT_RUST_VERSION" | cut -d. -f1,2)
-        if [[ "$(echo "$RUST_MAJOR_MINOR >= 1.78" | bc 2>/dev/null)" == "1" ]] 2>/dev/null || \
-           [[ "${RUST_MAJOR_MINOR%%.*}" -ge 2 ]] || \
-           [[ "${RUST_MAJOR_MINOR#*.}" -ge 78 && "${RUST_MAJOR_MINOR%%.*}" -eq 1 ]]; then
-            echo "  Rust $CURRENT_RUST_VERSION detected (>= 1.78, raw-dylib enabled)"
-            echo "  Installing Rust 1.77.0 toolchain for windows-gnu cross-compilation..."
-            rustup toolchain install 1.77.0 --profile minimal 2>/dev/null || true
-            rustup target add x86_64-pc-windows-gnu --toolchain 1.77.0 2>/dev/null || true
-            # Override the toolchain for this build via env var
-            export RUSTUP_TOOLCHAIN=1.77.0
-            echo "  Using Rust 1.77.0 (avoids raw-dylib/dlltool incompatibility)"
-            rustc --version
+        # Solution: use Rust's own rust-lld (LLVM 19, static binary) as dlltool.
+        # rust-lld supports "-flavor dlltool" mode since LLVM 17.
+        RUST_SYSROOT=$(rustc --print sysroot)
+        RUST_LLD="$RUST_SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
+        if [ -f "$RUST_LLD" ]; then
+            echo "  Found rust-lld: $RUST_LLD"
+            # Create a dlltool wrapper that invokes rust-lld in dlltool mode
+            WRAPPER="$HOME/mingw-toolchain/bin/dlltool"
+            cat > "$WRAPPER" <<'DLLTOOL_WRAPPER'
+#!/bin/sh
+exec RUST_LLD_PATH -flavor dlltool "$@"
+DLLTOOL_WRAPPER
+            sed -i "s|RUST_LLD_PATH|$RUST_LLD|" "$WRAPPER"
+            chmod +x "$WRAPPER"
+            export DLLTOOL="$WRAPPER"
+            echo "  Created dlltool wrapper using rust-lld"
+            echo "  Testing: $WRAPPER --version"
+            "$WRAPPER" --version 2>&1 | head -2 || true
+        else
+            echo "  WARNING: rust-lld not found at $RUST_LLD"
+            echo "  dlltool may not work correctly for raw-dylib"
         fi
     fi
 fi
