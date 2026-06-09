@@ -165,6 +165,9 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
             if [ -n "$LLVM_DLLTOOL_ALT" ]; then
                 echo "  Found llvm-dlltool (alt): $LLVM_DLLTOOL_ALT"
                 export DLLTOOL="$LLVM_DLLTOOL_ALT"
+            elif command -v llvm-dlltool >/dev/null 2>&1; then
+                echo "  Found llvm-dlltool from system PATH: $(which llvm-dlltool)"
+                export DLLTOOL=$(which llvm-dlltool)
             elif command -v x86_64-w64-mingw32-dlltool >/dev/null 2>&1; then
                 echo "  llvm-dlltool not found, using mingw dlltool: $(which x86_64-w64-mingw32-dlltool)"
                 export DLLTOOL=$(which x86_64-w64-mingw32-dlltool)
