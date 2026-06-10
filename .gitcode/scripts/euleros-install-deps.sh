@@ -117,8 +117,8 @@ if ! command -v cargo >/dev/null 2>&1; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 fi
 source "$HOME/.cargo/env"
-rustup toolchain install stable --profile minimal
-rustup default stable
+rustup toolchain install 1.85.0 --profile minimal
+rustup default 1.85.0
 
 echo "=== Installing Rust cross-compilation targets ==="
 rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-gnu x86_64-pc-windows-gnu || true

@@ -145,72 +145,28 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
-        # Rust 1.78+ uses raw-dylib for windows-gnu which needs a compatible dlltool.
-        # Try these sources in order:
-        #   1. rustup llvm-tools-preview (included in some Rust versions)
-        #   2. Our cached LLVM 22.1.7 binary (version-matched with Rust 1.96.0)
-        #   3. OBS / Chinese mirror download (populates the cache)
-        #   4. System PATH (fallback, may be incompatible)
-        # Note: system PATH is checked last because mingw toolchains often
-        # bundle a mismatched llvm-dlltool that fails at import-library generation.
-        echo "  Installing llvm-tools-preview for compatible llvm-dlltool..."
+        # Rust expects llvm-dlltool for raw-dylib import-lib generation on windows-gnu.
+        # First try rustup llvm-tools-preview. If not found, leave DLLTOOL unset -
+        # Rust will fall back to its internal LLVM, which is guaranteed compatible.
+        echo "  Installing llvm-tools-preview..."
         rustup component add llvm-tools-preview 2>&1 || echo "  WARN: llvm-tools-preview install failed"
 
         export DLLTOOL=""
         RUST_SYSROOT=$(rustc --print sysroot)
         LLVM_DLLTOOL=$(find "$RUST_SYSROOT" -name "llvm-dlltool" -type f 2>/dev/null | head -1)
-
-        LLVM_CACHE_DIR="$HOME/.cache/llvm-dlltool"
-        LLVM_CACHE_BIN="$LLVM_CACHE_DIR/bin/llvm-dlltool"
-        LLVM_VERSION="22.1.7"
-        LLVM_TARBALL="LLVM-${LLVM_VERSION}-Linux-X64.tar.xz"
+        echo "  Rust sysroot: $RUST_SYSROOT"
+        rustc -vV 2>&1 | grep -i llvm | head -1 || true
 
         if [ -n "$LLVM_DLLTOOL" ] && [ -f "$LLVM_DLLTOOL" ]; then
             echo "  Found llvm-dlltool in rustup sysroot: $LLVM_DLLTOOL"
+            "$LLVM_DLLTOOL" --version 2>&1 || true
             export DLLTOOL="$LLVM_DLLTOOL"
-        elif [ -f "$LLVM_CACHE_BIN" ]; then
-            echo "  Using cached llvm-dlltool (LLVM ${LLVM_VERSION}): $LLVM_CACHE_BIN"
-            export DLLTOOL="$LLVM_CACHE_BIN"
         else
-            echo "  llvm-dlltool not in cache, downloading LLVM ${LLVM_VERSION}..."
-            mkdir -p "$(dirname "$LLVM_CACHE_BIN")"
-
-            # Try OBS first (fast, single binary)
-            LLVM_OBS_URL="${LLVM_DLLTOOL_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/llvm-dlltool-x86_64-linux}"
-            echo "  Trying OBS: $LLVM_OBS_URL"
-            if curl -fL --connect-timeout 10 --max-time 60 -o "$LLVM_CACHE_BIN" "$LLVM_OBS_URL" 2>/dev/null; then
-                chmod +x "$LLVM_CACHE_BIN"
-                echo "  Downloaded from OBS"
-            else
-                # Try Chinese mirrors — extract only llvm-dlltool from tarball
-                for MIRROR_URL in \
-                    "https://mirrors.tuna.tsinghua.edu.cn/github-release/llvm/llvm-project/llvmorg-${LLVM_VERSION}/${LLVM_TARBALL}" \
-                    "https://mirrors.ustc.edu.cn/github-release/llvm/llvm-project/llvmorg-${LLVM_VERSION}/${LLVM_TARBALL}" \
-                    "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/${LLVM_TARBALL}"; do
-                    echo "  Trying mirror: $MIRROR_URL"
-                    if curl -fL --connect-timeout 30 --max-time 600 "$MIRROR_URL" 2>/dev/null | \
-                       tar -xJ --strip-components=1 --wildcards '*/bin/llvm-dlltool' -O > "$LLVM_CACHE_BIN" 2>/dev/null; then
-                        chmod +x "$LLVM_CACHE_BIN"
-                        echo "  Extracted llvm-dlltool from mirror"
-                        break
-                    fi
-                done
-            fi
-
-            if [ -f "$LLVM_CACHE_BIN" ]; then
-                echo "  Cached llvm-dlltool: $LLVM_CACHE_BIN"
-                export DLLTOOL="$LLVM_CACHE_BIN"
-            elif command -v llvm-dlltool >/dev/null 2>&1; then
-                echo "  WARN: download failed, falling back to system PATH"
-                echo "  (may be incompatible — import lib generation may fail)"
-                export DLLTOOL="$(command -v llvm-dlltool)"
-            else
-                echo "  ERROR: llvm-dlltool not available from any source"
-                echo "  Sources tried: rustup, OBS, Tsinghua/USTC mirrors, system PATH"
-                exit 1
-            fi
+            echo "  llvm-dlltool not in rustup sysroot, relying on Rust's internal LLVM"
+            echo "  (if this fails with 'failed to add native library', Rust version"
+            echo "   may need to be adjusted to one whose LLVM matches the toolchain)"
         fi
-        echo "  DLLTOOL=${DLLTOOL:-}"
+        echo "  DLLTOOL=${DLLTOOL:-<unset, using Rust internal>}"
     fi
 fi
 
