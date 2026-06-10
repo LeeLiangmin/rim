@@ -1,0 +1,137 @@
+name: Environment Probe
+
+on:
+  push:
+    branches: ["env-check"]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu:latest
+    steps:
+      - uses: checkout-action@0.0.1
+      - name: OS & Kernel
+        run: |
+          echo "::group::OS Release"
+          cat /etc/os-release || true
+          echo "::endgroup::"
+          echo "::group::Kernel & Arch"
+          uname -a
+          echo "::endgroup::"
+          echo "::group::glibc"
+          /lib64/libc.so.6 2>&1 || true
+          ldd --version 2>&1 | head -3 || true
+          echo "::endgroup::"
+          echo "::group::CPU"
+          nproc
+          cat /proc/cpuinfo | grep -E 'model name|processor' | head -10 || true
+          echo "::endgroup::"
+          echo "::group::Memory"
+          free -h || true
+          echo "::endgroup::"
+          echo "::group::Disk"
+          df -h / /home /tmp 2>/dev/null || true
+          echo "::endgroup::"
+
+      - name: System Packages
+        run: |
+          echo "::group::RPM Packages"
+          rpm -qa 2>/dev/null | sort | head -200 || true
+          echo "::endgroup::"
+          echo "::group::Available Repos"
+          yum repolist 2>/dev/null || dnf repolist 2>/dev/null || true
+          echo "::endgroup::"
+
+      - name: Toolchain Versions
+        run: |
+          echo "::group::gcc"
+          gcc --version 2>&1 | head -2 || echo "  not found"
+          g++ --version 2>&1 | head -2 || echo "  not found"
+          echo "::endgroup::"
+          echo "::group::make & build tools"
+          make --version 2>&1 | head -1 || echo "  not found"
+          cmake --version 2>&1 | head -1 || echo "  not found"
+          pkg-config --version 2>&1 || echo "  not found"
+          echo "::endgroup::"
+          echo "::group::python"
+          python3 --version 2>&1 || echo "  not found"
+          pip3 --version 2>&1 || echo "  not found"
+          echo "::endgroup::"
+          echo "::group::node & pnpm"
+          node --version 2>&1 || echo "  not found"
+          npm --version 2>&1 || echo "  not found"
+          pnpm --version 2>&1 || echo "  not found"
+          echo "::endgroup::"
+          echo "::group::git"
+          git --version 2>&1 || echo "  not found"
+          echo "::endgroup::"
+          echo "::group::curl & wget"
+          curl --version 2>&1 | head -1 || echo "  not found"
+          wget --version 2>&1 | head -1 || echo "  not found"
+          echo "::endgroup::"
+          echo "::group::docker"
+          docker --version 2>&1 || echo "  not found"
+          echo "::endgroup::"
+
+      - name: Network Connectivity
+        run: |
+          echo "::group::DNS"
+          cat /etc/resolv.conf 2>/dev/null || true
+          echo "::endgroup::"
+          echo "::group::Mirror Reachability"
+          for url in \
+            "https://mirror.xuanwu.openatom.cn" \
+            "https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/" \
+            "https://mirrors.tuna.tsinghua.edu.cn" \
+            "https://mirrors.ustc.edu.cn" \
+            "https://github.com" \
+            "https://api.gitcode.com/api/v5"; do
+            echo -n "  $url ... "
+            curl -sSI --connect-timeout 5 --max-time 10 "$url" 2>/dev/null | head -1 || echo "UNREACHABLE"
+          done
+          echo "::endgroup::"
+          echo "::group::OBS file access"
+          for f in \
+            "https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/mingw-w64-cross.tar.xz" \
+            "https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz" \
+            "https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/llvm-dlltool-x86_64-linux"; do
+            echo -n "  $(basename $f) ... "
+            curl -sSI --connect-timeout 5 --max-time 10 "$f" 2>/dev/null | grep -E 'HTTP|Content-Length' || echo "UNREACHABLE"
+          done
+          echo "::endgroup::"
+
+      - name: Cross-compile Tools
+        run: |
+          echo "::group::mingw-w64"
+          echo -n "  x86_64-w64-mingw32-gcc: "
+          command -v x86_64-w64-mingw32-gcc 2>/dev/null || echo "not found"
+          echo -n "  x86_64-w64-mingw32-dlltool: "
+          command -v x86_64-w64-mingw32-dlltool 2>/dev/null || echo "not found"
+          echo -n "  llvm-dlltool: "
+          command -v llvm-dlltool 2>/dev/null || echo "not found"
+          echo "::endgroup::"
+          echo "::group::aarch64"
+          echo -n "  aarch64-linux-gnu-gcc: "
+          command -v aarch64-linux-gnu-gcc 2>/dev/null || echo "not found"
+          echo "::endgroup::"
+          echo "::group::musl"
+          echo -n "  musl-gcc: "
+          command -v musl-gcc 2>/dev/null || echo "not found"
+          echo "::endgroup::"
+
+      - name: Filesystem Layout
+        run: |
+          echo "::group::Home"
+          echo "  HOME=$HOME"
+          ls -la "$HOME/" 2>/dev/null || true
+          echo "::endgroup::"
+          echo "::group::Workspace"
+          echo "  PWD=$(pwd)"
+          ls -la /data/workspace/ 2>/dev/null | head -20 || true
+          echo "::endgroup::"
+          echo "::group::PATH"
+          echo "$PATH" | tr ':' '\n'
+          echo "::endgroup::"
+          echo "::group::Env Vars"
+          env | sort | grep -v -E 'TOKEN|SECRET|PASSWORD|KEY|AUTH' | head -80 || true
+          echo "::endgroup::"
