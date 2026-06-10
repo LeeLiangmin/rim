@@ -248,18 +248,14 @@ jobs:
 
       - name: Windows-gnu cross-compile toolchain test
         run: |
-          echo "::group::Source .env"
-          if [[ -f .gitcode/.env ]]; then
-            set -a; source .gitcode/.env; set +a
-            echo "  BUILD_TARGET_WINDOWS=$BUILD_TARGET_WINDOWS"
-            echo "  MINGW_TOOLCHAIN_URL=$MINGW_TOOLCHAIN_URL"
-          fi
-          echo "::endgroup::"
+          # cd to checked-out repo (CI runs script from temp dir, not repo root)
+          REPO="$SHARE_PATH/repo_workspace"
+          if [ -d "$REPO" ]; then cd "$REPO"; fi
 
           echo "::group::Install Rust (xuanwu mirror)"
           if ! command -v cargo >/dev/null 2>&1; then
-            export RUSTUP_DIST_SERVER="${RUSTUP_DIST_SERVER:-https://mirror.xuanwu.openatom.cn}"
-            export RUSTUP_UPDATE_ROOT="${RUSTUP_UPDATE_ROOT:-https://mirror.xuanwu.openatom.cn/rustup}"
+            export RUSTUP_DIST_SERVER=https://mirror.xuanwu.openatom.cn
+            export RUSTUP_UPDATE_ROOT=https://mirror.xuanwu.openatom.cn/rustup
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
             source "$HOME/.cargo/env"
           fi
@@ -270,9 +266,9 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Download mingw-w64 toolchain from OBS"
-          MINGW_URL="${MINGW_TOOLCHAIN_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/mingw-w64-cross.tar.xz}"
+          MINGW_URL=https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/mingw-w64-cross.tar.xz
           MINGW_DIR="$HOME/mingw-toolchain"
-          if [[ ! -d "$MINGW_DIR/bin" ]]; then
+          if [ ! -d "$MINGW_DIR/bin" ]; then
             mkdir -p "$MINGW_DIR"
             echo "  Downloading from $MINGW_URL ..."
             curl -sSL --connect-timeout 10 --max-time 300 "$MINGW_URL" | tar -xJ --strip-components=1 -C "$MINGW_DIR"
@@ -282,7 +278,7 @@ jobs:
           fi
           export PATH="$MINGW_DIR/bin:$PATH"
           echo -n "  x86_64-w64-mingw32-gcc: "
-          command -v x86_64-w64-mingw32-gcc && x86_64-w64-mingw32-gcc --version | head -1 || echo "NOT FOUND"
+          command -v x86_64-w64-mingw32-gcc && x86_64-w64-mingw32-gcc --version 2>&1 | head -1 || echo "NOT FOUND"
           echo -n "  llvm-dlltool: "
           if [ -x "$MINGW_DIR/bin/llvm-dlltool" ]; then
             echo "$MINGW_DIR/bin/llvm-dlltool"
@@ -294,8 +290,6 @@ jobs:
           echo "::group::Smoke test: compile trivial Rust crate for windows-gnu"
           export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
           export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
-          echo "  CC_x86_64_pc_windows_gnu=$CC_x86_64_pc_windows_gnu"
-          echo "  CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER"
 
           TESTDIR=$(mktemp -d)
           echo "  test dir: $TESTDIR"
