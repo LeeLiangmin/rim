@@ -50,6 +50,9 @@ clap = { version = "4", features = ["derive"] }
 colored = "2"
 dirs.workspace = true
 glob = "0.3.2"
+# Pin getrandom to 0.2.x: on windows-gnu, getrandom 0.3.x uses bcryptprimitives
+# which requires raw-dylib + llvm-dlltool. 0.2.x uses RtlGenRandom instead.
+getrandom = "=0.2.15"
 serde.workspace = true
 url.workspace = true
 libc = "0.2"
@@ -75,9 +78,3 @@ rim_common = { path = "rim_common" }
 winreg = "0.52.0"
 winapi = { version = "0.3", features = ["winuser", "winbase"] }
 cc = "1"
-
-# Patch getrandom to 0.2.x: on windows-gnu, getrandom 0.3.x uses bcryptprimitives
-# which requires raw-dylib + llvm-dlltool. 0.2.x uses RtlGenRandom instead,
-# completely avoiding the raw-dylib import-lib issue.
-[patch.crates-io]
-getrandom = { version = "=0.2.15" }
