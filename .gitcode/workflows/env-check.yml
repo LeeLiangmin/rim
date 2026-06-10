@@ -2,7 +2,7 @@ name: Environment Probe
 
 on:
   push:
-    branches: ["env-check"]
+    branches: ["master"]
   workflow_dispatch:
 
 jobs:
