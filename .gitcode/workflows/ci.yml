@@ -8,7 +8,7 @@ on:
 
 jobs:
   linux-x86-64:
-    runs-on: ubuntu:latest
+    runs-on: euleros-2.10.1
     steps:
       - uses: checkout-action@0.0.1
       - name: Install deps
@@ -17,7 +17,7 @@ jobs:
         run: cd repo_workspace && bash -c 'source .gitcode/.env && bash .gitcode/scripts/build-target.sh --build-target "$BUILD_TARGET_X86_64" --dist-targets "$DIST_TARGETS_X86_64"'
 
   linux-aarch64:
-    runs-on: ubuntu:latest
+    runs-on: euleros-2.10.1
     steps:
       - uses: checkout-action@0.0.1
       - name: Install deps
@@ -26,7 +26,7 @@ jobs:
         run: cd repo_workspace && bash -c 'source .gitcode/.env && bash .gitcode/scripts/build-target.sh --build-target "$BUILD_TARGET_AARCH64" --dist-targets "$DIST_TARGETS_AARCH64"'
 
   windows-gnu:
-    runs-on: ubuntu:latest
+    runs-on: euleros-2.10.1
     steps:
       - uses: checkout-action@0.0.1
       - name: Install deps
