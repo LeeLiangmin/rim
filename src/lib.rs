@@ -1,4 +1,4 @@
-﻿#![deny(unused_must_use)]
+#![deny(unused_must_use)]
 #![allow(clippy::ptr_arg, clippy::type_complexity)]
 
 #[macro_use]

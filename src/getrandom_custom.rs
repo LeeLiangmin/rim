@@ -1,4 +1,4 @@
-﻿//! Custom getrandom 0.3 RNG registration for windows-gnu cross-compilation.
+//! Custom getrandom 0.3 RNG registration for windows-gnu cross-compilation.
 //!
 //! getrandom 0.3.x uses raw-dylib linking to bcryptprimitives on Windows,
 //! which fails during cross-compilation from Linux because the DLL import

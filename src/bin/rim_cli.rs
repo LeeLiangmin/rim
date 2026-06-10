@@ -1,4 +1,4 @@
-﻿use anyhow::Result;
+use anyhow::Result;
 use rim::{cli::ExecutableCommand, Mode};
 
 fn main() -> Result<()> {
