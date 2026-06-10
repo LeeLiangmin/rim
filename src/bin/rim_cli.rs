@@ -2,8 +2,6 @@ use anyhow::Result;
 use rim::{cli::ExecutableCommand, Mode};
 
 fn main() -> Result<()> {
-    rim::getrandom_custom::init();
-
     let status = {
         match Mode::detect(None, None) {
             Mode::Installer(cli) => cli?.execute(),

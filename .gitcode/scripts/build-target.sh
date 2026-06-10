@@ -168,11 +168,6 @@ fi
 echo "=== Vendoring offline packages ==="
 cargo run -p rim_dev -- vendor --for "$DIST_TARGETS"
 
-# Regenerate Cargo.lock to include any new dependencies (e.g. getrandom03)
-# before the --locked build below. The sparse registry is reachable.
-echo "=== Syncing Cargo.lock ==="
-cargo update
-
 echo "=== Building CLI installer ==="
 CMD="cargo run -p rim_dev -- dist --cli"
 if $BINARY_ONLY; then

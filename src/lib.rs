@@ -9,7 +9,6 @@ extern crate log;
 extern crate rim_common;
 
 pub mod cli;
-pub mod getrandom_custom;
 mod core;
 
 // Exports
