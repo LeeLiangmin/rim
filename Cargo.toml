@@ -76,6 +76,13 @@ rim-test-support = { version = "0.1.0", path = "rim_test/rim-test-support" }
 [build-dependencies]
 rim_common = { path = "rim_common" }
 
+# Force getrandom 0.2.x for windows-gnu cross-compilation: 0.3.x uses raw-dylib
+# linking to bcryptprimitives which requires llvm-dlltool matching Rust's builtin
+# LLVM 19.1.7 — unavailable on EulerOS 2.0 (glibc 2.28, yum zero repos).
+# 0.2.x uses RtlGenRandom instead, which cross-compiles cleanly.
+[target.'cfg(all(target_os = "windows", target_env = "gnu"))'.patch.crates-io]
+getrandom = { git = "https://github.com/rust-random/getrandom", tag = "v0.2.15" }
+
 [target."cfg(windows)".dependencies]
 winreg = "0.52.0"
 winapi = { version = "0.3", features = ["winuser", "winbase"] }
