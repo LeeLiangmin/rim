@@ -124,72 +124,78 @@ jobs:
           echo "::group::Python3 identity"
           echo -n "  path: "; command -v python3
           echo -n "  real: "; python3 -c "import sys; print(sys.executable)"
-          echo -n "  version: "; python3 --version
-          echo -n "  site-packages: "; python3 -c "import site; print(site.getsitepackages())" 2>&1 || true
-          ls -la /usr/local/bin/python3 2>/dev/null || echo "  ls /usr/local/bin/python3 FAILED"
+          python3 -c "import sys; print('  abi:', sys.abiflags); print('  version_info:', sys.version_info[:3])"
           echo "::endgroup::"
 
-          echo "::group::Shebangs"
-          echo "  /bin/yum: $(head -1 /bin/yum 2>/dev/null || echo 'N/A')"
-          echo "  /bin/dnf: $(head -1 /bin/dnf 2>/dev/null || echo 'N/A')"
-          echo "  /usr/bin/yum: $(head -1 /usr/bin/yum 2>/dev/null || echo 'N/A')"
-          echo "  /usr/bin/dnf: $(head -1 /usr/bin/dnf 2>/dev/null || echo 'N/A')"
+          echo "::group::Search for system python3.7 binary"
+          for p in /usr/bin/python3.7 /usr/bin/python37 /usr/bin/python3; do
+            if [ -x "$p" ]; then
+              echo "  $p: EXISTS ($($p --version 2>&1))"
+            else
+              echo "  $p: not found"
+            fi
+          done
           echo "::endgroup::"
 
-          echo "::group::DNF module import (full trace)"
-          python3 -c "import dnf" 2>&1 || true
-          python3 -c "import rpm" 2>&1 || true
+          echo "::group::All python3.7 site-packages"
+          find /usr -path "*/python3.7/site-packages" -type d 2>/dev/null
+          echo "---"
+          echo "  libdnf location:"
+          find /usr -name "libdnf*" -type f 2>/dev/null | head -20
+          echo "---"
+          echo "  rpm location:"
+          find /usr -path "*/site-packages/rpm" -maxdepth 5 -type d 2>/dev/null
           echo "::endgroup::"
 
-          echo "::group::Find dnf libraries on disk"
-          find /usr/lib*/python*/site-packages/dnf -maxdepth 0 -type d 2>/dev/null || echo "  not found under /usr/lib"
-          find /usr/lib64/python*/site-packages/dnf -maxdepth 0 -type d 2>/dev/null || echo "  not found under /usr/lib64"
-          find /opt -path "*/site-packages/dnf" -maxdepth 5 -type d 2>/dev/null || echo "  not found under /opt"
+          echo "::group::Attempt fix: full PYTHONPATH (lib + lib64)"
+          PY37_LIB="/usr/lib/python3.7/site-packages"
+          PY37_LIB64="/usr/lib64/python3.7/site-packages"
+          PY37_PATHS=""
+          for d in "$PY37_LIB" "$PY37_LIB64"; do
+            [ -d "$d" ] && PY37_PATHS="$PY37_PATHS:$d"
+          done
+          PY37_PATHS="${PY37_PATHS#:}"
+          echo "  PYTHONPATH=$PY37_PATHS"
+          if [ -n "$PY37_PATHS" ]; then
+            PYTHONPATH="$PY37_PATHS" python3 /bin/yum --version 2>&1 | head -5
+          fi
           echo "::endgroup::"
 
-          echo "::group::Attempt fix: symlink (needs root)"
-          ln -sf "$(python3 -c "import sys; print(sys.executable)")" /usr/bin/python3 2>&1 && echo "  symlink OK" || echo "  symlink FAILED"
-          echo "::endgroup::"
-
-          echo "::group::Attempt fix: PYTHONPATH injection"
-          DNF_PATH=$(find /usr/lib*/python*/site-packages -maxdepth 0 -type d 2>/dev/null | head -1)
-          echo "  candidate PYTHONPATH: $DNF_PATH"
-          if [ -n "$DNF_PATH" ]; then
-            PYTHONPATH="$DNF_PATH" python3 /bin/yum --version 2>&1 | head -3 || echo "  PYTHONPATH fix FAILED"
+          echo "::group::Attempt fix: use python3.7 if available"
+          PY37_BIN=""
+          for p in /usr/bin/python3.7 /usr/bin/python37; do
+            [ -x "$p" ] && PY37_BIN="$p" && break
+          done
+          if [ -n "$PY37_BIN" ]; then
+            echo "  using $PY37_BIN to call yum"
+            $PY37_BIN /bin/yum --version 2>&1 | head -5
           else
-            echo "  no candidate path found"
+            echo "  no python3.7 binary found"
           fi
           echo "::endgroup::"
 
       - name: Install Docker (yum)
         run: |
           echo "::group::Install Docker"
-          PYTHON3_PATH=$(python3 -c "import sys; print(sys.executable)" 2>/dev/null)
-          DNF_PATH=$(find /usr/lib*/python*/site-packages -maxdepth 0 -type d 2>/dev/null | head -1)
+          PY37_PATHS="/usr/lib/python3.7/site-packages"
+          [ -d "/usr/lib64/python3.7/site-packages" ] && PY37_PATHS="$PY37_PATHS:/usr/lib64/python3.7/site-packages"
+
           YUM_OK=false
 
-          # attempt 1: symlink
-          if ln -sf "$PYTHON3_PATH" /usr/bin/python3 2>/dev/null; then
-            echo "  using symlinked yum"
-            yum install -y docker docker-engine 2>&1 | head -10 && YUM_OK=true
+          # attempt 1: use python3.7 binary directly
+          PY37_BIN=""
+          for p in /usr/bin/python3.7 /usr/bin/python37; do
+            [ -x "$p" ] && PY37_BIN="$p" && break
+          done
+          if [ -n "$PY37_BIN" ]; then
+            echo "  using $PY37_BIN /bin/yum"
+            $PY37_BIN /bin/yum install -y docker docker-engine 2>&1 | head -20 && YUM_OK=true
           fi
 
-          # attempt 2: PYTHONPATH injection
-          if [ "$YUM_OK" = false ] && [ -n "$DNF_PATH" ]; then
-            echo "  using PYTHONPATH=$DNF_PATH python3 /bin/yum"
-            PYTHONPATH="$DNF_PATH" python3 /bin/yum install -y docker docker-engine 2>&1 | head -10 && YUM_OK=true
-          fi
-
-          # attempt 3: find the system dnf module path
+          # attempt 2: PYTHONPATH with full paths on python3.8
           if [ "$YUM_OK" = false ]; then
-            echo "  searching all site-packages..."
-            for sp in $(find /usr -path "*/site-packages" -type d 2>/dev/null); do
-              if python3 -c "import sys; sys.path.insert(0,'$sp'); import dnf" 2>/dev/null; then
-                echo "  found working site-packages: $sp"
-                PYTHONPATH="$sp" python3 /bin/yum install -y docker docker-engine 2>&1 | head -10 && YUM_OK=true
-                break
-              fi
-            done
+            echo "  using PYTHONPATH=$PY37_PATHS python3 /bin/yum"
+            PYTHONPATH="$PY37_PATHS" python3 /bin/yum install -y docker docker-engine 2>&1 | head -20 && YUM_OK=true
           fi
 
           if [ "$YUM_OK" = false ]; then
