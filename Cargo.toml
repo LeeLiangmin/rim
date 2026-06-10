@@ -1,4 +1,4 @@
-[package]
+﻿[package]
 name = "rim"
 version.workspace = true
 edition.workspace = true
@@ -53,6 +53,12 @@ glob = "0.3.2"
 # Pin getrandom to 0.2.x: on windows-gnu, getrandom 0.3.x uses bcryptprimitives
 # which requires raw-dylib + llvm-dlltool. 0.2.x uses RtlGenRandom instead.
 getrandom = "=0.2.15"
+# getrandom 0.3.x (transitively depended on by tempfile, zip) uses raw-dylib
+# linking to bcryptprimitives on Windows, which fails during cross-compilation
+# to windows-gnu. Enable the `custom` feature to bypass OS backends; a
+# RDRAND-based replacement is registered at startup.
+getrandom03 = { package = "getrandom", version = "0.3", default-features = false, features = ["custom"] }
+
 serde.workspace = true
 url.workspace = true
 libc = "0.2"
@@ -67,6 +73,7 @@ semver = "1.0.23"
 self-replace = "1"
 reqwest.workspace = true
 tokio.workspace = true
+
 
 [dev-dependencies]
 rim-test-support = { version = "0.1.0", path = "rim_test/rim-test-support" }

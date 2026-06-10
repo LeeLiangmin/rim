@@ -1,4 +1,4 @@
-#![deny(unused_must_use)]
+﻿#![deny(unused_must_use)]
 #![allow(clippy::ptr_arg, clippy::type_complexity)]
 
 #[macro_use]
@@ -9,6 +9,7 @@ extern crate log;
 extern crate rim_common;
 
 pub mod cli;
+pub mod getrandom_custom;
 mod core;
 
 // Exports
