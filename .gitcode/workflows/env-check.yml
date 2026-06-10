@@ -119,59 +119,36 @@ jobs:
           command -v musl-gcc 2>/dev/null || echo "not found"
           echo "::endgroup::"
 
-      - name: Docker Probe
+      - name: Install Docker (yum)
         run: |
-          echo "::group::Docker Binary"
+          echo "::group::Install Docker"
+          yum install -y docker docker-engine 2>&1 || dnf install -y docker docker-engine 2>&1 || true
+          echo "::endgroup::"
+          echo "::group::Post-install Check"
           echo -n "  docker: "
           command -v docker 2>/dev/null || echo "NOT FOUND"
-          echo -n "  dockerd: "
-          command -v dockerd 2>/dev/null || echo "NOT FOUND"
-          echo -n "  podman: "
-          command -v podman 2>/dev/null || echo "NOT FOUND"
           echo "::endgroup::"
 
-          echo "::group::Docker Socket & Permissions"
-          for p in /var/run/docker.sock /run/docker.sock /var/run/docker.pid; do
+      - name: Docker Build Test
+        run: |
+          echo "::group::docker build"
+          docker build . --file ci/docker/dist-x86-64-linux/Dockerfile --tag custom-rust-dist:test 2>&1 || echo "  BUILD FAILED"
+          echo "::endgroup::"
+
+      - name: Docker Socket & Env
+        run: |
+          echo "::group::Socket"
+          for p in /var/run/docker.sock /run/docker.sock; do
             if [ -e "$p" ]; then
               echo "  $p: EXISTS ($(ls -la "$p" 2>/dev/null | awk '{print $1, $3, $4}'))"
             else
               echo "  $p: not found"
             fi
           done
-          if [ -e /var/run/docker.sock ]; then
-            echo -n "  socket writable: "
-            test -w /var/run/docker.sock && echo "YES" || echo "NO"
-          fi
           echo "::endgroup::"
-
-          echo "::group::Docker Env Vars"
-          env | grep -iE 'docker|DOCKER|containerd' || echo "  (none)"
-          echo "::endgroup::"
-
-          echo "::group::Docker Version Test"
-          if command -v docker >/dev/null 2>&1; then
-            docker --version 2>&1 || true
-            echo "  --- docker info ---"
-            docker info 2>&1 | head -20 || true
-            echo "  --- docker ps ---"
-            docker ps 2>&1 || true
-          else
-            echo "  docker binary not available, skip"
-          fi
-          echo "::endgroup::"
-
-          echo "::group::Docker Build Test (official style)"
-          if command -v docker >/dev/null 2>&1; then
-            echo "  Trying: docker build . --file Dockerfile --tag probe-test"
-            cd "$SHARE_PATH/repo_workspace" 2>/dev/null || cd repo_workspace 2>/dev/null || true
-            if [ -f ci/docker/dist-x86-64-linux/Dockerfile ]; then
-              docker build . --file ci/docker/dist-x86-64-linux/Dockerfile --tag probe-test:latest 2>&1 || echo "  BUILD FAILED"
-            else
-              echo "  no Dockerfile found at expected path"
-            fi
-          else
-            echo "  docker not available, skip build test"
-          fi
+          echo "::group::Docker Info"
+          docker --version 2>&1 || echo "  docker --version failed"
+          docker info 2>&1 | head -20 || echo "  docker info failed"
           echo "::endgroup::"
 
       - name: Filesystem Layout
