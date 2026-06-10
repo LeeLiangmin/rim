@@ -159,39 +159,54 @@ else
     echo "  llvm-dlltool not in system packages (will download from mirror if needed)"
 fi
 
-echo "=== Installing Docker static binary (for windows-gnu cross-rs build) ==="
-if ! command -v docker >/dev/null 2>&1; then
-    DOCKER_VERSION="${DOCKER_VERSION:-24.0.9}"
-    DOCKER_URL="https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz"
-    if curl -sSL --connect-timeout 10 --max-time 120 "$DOCKER_URL" -o /tmp/docker.tgz; then
-        tar xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1
-        rm -f /tmp/docker.tgz
-        echo "  Docker $(docker --version 2>&1 || true) installed"
-    else
-        echo "  WARNING: failed to download Docker static binary"
-    fi
-else
-    echo "  Docker already installed: $(docker --version 2>&1 || true)"
-fi
-
-echo "=== Starting Docker daemon ==="
-if command -v docker >/dev/null 2>&1; then
-    # Try to start dockerd in background (may fail in non-privileged K8s Pod)
-    dockerd --data-root /tmp/docker --log-level error --iptables=false --ip6tables=false 2>/tmp/dockerd.log &
-    DOCKERD_PID=$!
-    DOCKER_READY=false
-    for i in $(seq 1 10); do
-        if docker info >/dev/null 2>&1; then
-            DOCKER_READY=true
-            break
+# Docker is only needed for windows-gnu cross-rs build
+if $INSTALL_WIN_CROSS; then
+    echo "=== Installing Docker static binary (for windows-gnu cross-rs build) ==="
+    if ! command -v docker >/dev/null 2>&1; then
+        DOCKER_VERSION="${DOCKER_VERSION:-24.0.9}"
+        # Try official URL first, fallback to OBS mirror
+        DOCKER_URLS="
+            https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/docker-${DOCKER_VERSION}.tgz
+            https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz
+        "
+        DOCKER_OK=false
+        for url in $DOCKER_URLS; do
+            echo "  Trying: $url"
+            if curl -sSL --connect-timeout 10 --max-time 180 "$url" -o /tmp/docker.tgz 2>/dev/null; then
+                tar xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1
+                rm -f /tmp/docker.tgz
+                DOCKER_OK=true
+                break
+            fi
+            echo "  (failed, trying next mirror)"
+        done
+        if $DOCKER_OK; then
+            echo "  Docker $(docker --version 2>&1 || true) installed"
+        else
+            echo "  WARNING: failed to download Docker static binary from all sources"
         fi
-        sleep 1
-    done
-    if $DOCKER_READY; then
-        echo "  Docker daemon started (PID $DOCKERD_PID)"
     else
-        echo "  WARNING: Docker daemon failed to start (K8s Pod may not allow privileged mode)"
-        cat /tmp/dockerd.log 2>/dev/null | tail -5 || true
+        echo "  Docker already installed: $(docker --version 2>&1 || true)"
+    fi
+
+    echo "=== Starting Docker daemon ==="
+    if command -v docker >/dev/null 2>&1; then
+        dockerd --data-root /tmp/docker --log-level error --iptables=false --ip6tables=false 2>/tmp/dockerd.log &
+        DOCKERD_PID=$!
+        DOCKER_READY=false
+        for i in $(seq 1 10); do
+            if docker info >/dev/null 2>&1; then
+                DOCKER_READY=true
+                break
+            fi
+            sleep 1
+        done
+        if $DOCKER_READY; then
+            echo "  Docker daemon started (PID $DOCKERD_PID)"
+        else
+            echo "  WARNING: Docker daemon failed to start (K8s Pod may not allow privileged mode)"
+            cat /tmp/dockerd.log 2>/dev/null | tail -5 || true
+        fi
     fi
 fi
 
