@@ -146,22 +146,67 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
         # Rust 1.78+ uses raw-dylib for windows-gnu which needs a compatible dlltool.
-        # Install llvm-tools-preview then search for llvm-dlltool under sysroot
-        # (paths vary by Rust version, so use find instead of hardcoding).
+        # Try these sources in order:
+        #   1. rustup llvm-tools-preview (included in some Rust versions)
+        #   2. System-installed LLVM via package manager (yum/dnf install llvm)
+        #   3. OBS download (fast, after user uploads the binary)
+        #   4. Chinese mirror of LLVM release (Tsinghua/USTC)
+        # The binary is cached at ~/.cache/llvm-dlltool/ to avoid repeated downloads.
         echo "  Installing llvm-tools-preview for compatible llvm-dlltool..."
         rustup component add llvm-tools-preview 2>&1 || echo "  WARN: llvm-tools-preview install failed"
 
         export DLLTOOL=""
         RUST_SYSROOT=$(rustc --print sysroot)
         LLVM_DLLTOOL=$(find "$RUST_SYSROOT" -name "llvm-dlltool" -type f 2>/dev/null | head -1)
+
         if [ -n "$LLVM_DLLTOOL" ] && [ -f "$LLVM_DLLTOOL" ]; then
             echo "  Found llvm-dlltool in rustup sysroot: $LLVM_DLLTOOL"
             export DLLTOOL="$LLVM_DLLTOOL"
+        elif command -v llvm-dlltool >/dev/null 2>&1; then
+            echo "  Found llvm-dlltool in system PATH: $(command -v llvm-dlltool)"
+            export DLLTOOL="$(command -v llvm-dlltool)"
         else
-            echo "  ERROR: llvm-dlltool not found under sysroot ($RUST_SYSROOT)"
-            echo "  llvm-tools-preview may not include it in this Rust version."
-            echo "  Searched with: find \$RUST_SYSROOT -name llvm-dlltool"
-            exit 1
+            echo "  llvm-dlltool not available, trying download sources..."
+
+            LLVM_CACHE_DIR="$HOME/.cache/llvm-dlltool"
+            LLVM_CACHE_BIN="$LLVM_CACHE_DIR/bin/llvm-dlltool"
+            LLVM_VERSION="22.1.7"
+            LLVM_TARBALL="LLVM-${LLVM_VERSION}-Linux-X64.tar.xz"
+
+            if [ ! -f "$LLVM_CACHE_BIN" ]; then
+                mkdir -p "$(dirname "$LLVM_CACHE_BIN")"
+
+                # Try OBS first (fast internal network)
+                LLVM_OBS_URL="${LLVM_DLLTOOL_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/llvm-dlltool-x86_64-linux}"
+                echo "  Trying OBS: $LLVM_OBS_URL"
+                if curl -fL --connect-timeout 10 --max-time 60 -o "$LLVM_CACHE_BIN" "$LLVM_OBS_URL" 2>/dev/null; then
+                    chmod +x "$LLVM_CACHE_BIN"
+                    echo "  Downloaded from OBS"
+                else
+                    # Try Chinese mirrors (Tsinghua Tuna, USTC) - extract only llvm-dlltool
+                    for MIRROR_URL in \
+                        "https://mirrors.tuna.tsinghua.edu.cn/github-release/llvm/llvm-project/llvmorg-${LLVM_VERSION}/${LLVM_TARBALL}" \
+                        "https://mirrors.ustc.edu.cn/github-release/llvm/llvm-project/llvmorg-${LLVM_VERSION}/${LLVM_TARBALL}" \
+                        "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/${LLVM_TARBALL}"; do
+                        echo "  Trying mirror: $MIRROR_URL"
+                        if curl -fL --connect-timeout 30 --max-time 600 "$MIRROR_URL" 2>/dev/null | \
+                           tar -xJ --strip-components=1 --wildcards '*/bin/llvm-dlltool' -O > "$LLVM_CACHE_BIN" 2>/dev/null; then
+                            chmod +x "$LLVM_CACHE_BIN"
+                            echo "  Extracted llvm-dlltool from mirror"
+                            break
+                        fi
+                    done
+                fi
+            fi
+
+            if [ -f "$LLVM_CACHE_BIN" ]; then
+                echo "  Using cached llvm-dlltool: $LLVM_CACHE_BIN"
+                export DLLTOOL="$LLVM_CACHE_BIN"
+            else
+                echo "  ERROR: llvm-dlltool not available from any source"
+                echo "  Sources tried: rustup, system PATH, OBS, Tsinghua/USTC mirrors"
+                exit 1
+            fi
         fi
         echo "  DLLTOOL=${DLLTOOL:-}"
     fi

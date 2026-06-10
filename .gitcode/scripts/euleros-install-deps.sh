@@ -147,4 +147,12 @@ CARGOEOF
 echo "=== Installing Python httpx for release script ==="
 python3 -c "import httpx" 2>/dev/null || pip3 install --quiet httpx || true
 
+echo "=== Installing LLVM (for llvm-dlltool, used by windows-gnu cross-compile) ==="
+install_pkg llvm clang llvm-devel 2>/dev/null || true
+if command -v llvm-dlltool >/dev/null 2>&1; then
+    echo "  llvm-dlltool: $(command -v llvm-dlltool)"
+else
+    echo "  llvm-dlltool not in system packages (will download from mirror if needed)"
+fi
+
 echo "=== Dependencies installed successfully ==="
