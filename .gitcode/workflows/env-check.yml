@@ -119,10 +119,41 @@ jobs:
           command -v musl-gcc 2>/dev/null || echo "not found"
           echo "::endgroup::"
 
+      - name: Fix yum/dnf (python3 shebang)
+        run: |
+          echo "::group::Diagnose"
+          echo "  python3 realpath: $(command -v python3)"
+          echo "  yum shebang: $(head -1 /bin/yum 2>/dev/null || echo 'N/A')"
+          echo "  dnf shebang: $(head -1 /bin/dnf 2>/dev/null || echo 'N/A')"
+          echo "::endgroup::"
+
+          echo "::group::Attempt symlink fix (needs root)"
+          ln -sf "$(command -v python3)" /usr/bin/python3 2>&1 && echo "  symlink OK" || echo "  symlink FAILED (need root)"
+          echo "::endgroup::"
+
+          echo "::group::Attempt direct python3 invocation"
+          python3 /bin/yum --version 2>&1 | head -1 || echo "  yum via python3 FAILED"
+          python3 /bin/dnf --version 2>&1 | head -1 || echo "  dnf via python3 FAILED"
+          echo "::endgroup::"
+
+          echo "::group::Try alias approach"
+          alias yum='python3 /bin/yum' 2>/dev/null || true
+          alias dnf='python3 /bin/dnf' 2>/dev/null || true
+          echo "  aliases set"
+          echo "::endgroup::"
+
       - name: Install Docker (yum)
         run: |
           echo "::group::Install Docker"
-          yum install -y docker docker-engine 2>&1 || dnf install -y docker docker-engine 2>&1 || true
+          if ln -sf "$(command -v python3)" /usr/bin/python3 2>/dev/null; then
+            echo "  using direct yum (symlink ok)"
+            yum install -y docker docker-engine 2>&1 || dnf install -y docker docker-engine 2>&1 || echo "  yum/dnf install FAILED"
+          elif python3 /bin/yum --version 2>&1 | grep -q '^[0-9]'; then
+            echo "  using python3 /bin/yum"
+            python3 /bin/yum install -y docker docker-engine 2>&1 || python3 /bin/dnf install -y docker docker-engine 2>&1 || echo "  yum/dnf install FAILED"
+          else
+            echo "  yum/dnf still broken — cannot install"
+          fi
           echo "::endgroup::"
           echo "::group::Post-install Check"
           echo -n "  docker: "
