@@ -159,4 +159,40 @@ else
     echo "  llvm-dlltool not in system packages (will download from mirror if needed)"
 fi
 
+echo "=== Installing Docker static binary (for windows-gnu cross-rs build) ==="
+if ! command -v docker >/dev/null 2>&1; then
+    DOCKER_VERSION="${DOCKER_VERSION:-24.0.9}"
+    DOCKER_URL="https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz"
+    if curl -sSL --connect-timeout 10 --max-time 120 "$DOCKER_URL" -o /tmp/docker.tgz; then
+        tar xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1
+        rm -f /tmp/docker.tgz
+        echo "  Docker $(docker --version 2>&1 || true) installed"
+    else
+        echo "  WARNING: failed to download Docker static binary"
+    fi
+else
+    echo "  Docker already installed: $(docker --version 2>&1 || true)"
+fi
+
+echo "=== Starting Docker daemon ==="
+if command -v docker >/dev/null 2>&1; then
+    # Try to start dockerd in background (may fail in non-privileged K8s Pod)
+    dockerd --data-root /tmp/docker --log-level error --iptables=false --ip6tables=false 2>/tmp/dockerd.log &
+    DOCKERD_PID=$!
+    DOCKER_READY=false
+    for i in $(seq 1 10); do
+        if docker info >/dev/null 2>&1; then
+            DOCKER_READY=true
+            break
+        fi
+        sleep 1
+    done
+    if $DOCKER_READY; then
+        echo "  Docker daemon started (PID $DOCKERD_PID)"
+    else
+        echo "  WARNING: Docker daemon failed to start (K8s Pod may not allow privileged mode)"
+        cat /tmp/dockerd.log 2>/dev/null | tail -5 || true
+    fi
+fi
+
 echo "=== Dependencies installed successfully ==="

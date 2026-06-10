@@ -165,32 +165,77 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
     fi
 fi
 
-echo "=== Vendoring offline packages ==="
-cargo run -p rim_dev -- vendor --for "$DIST_TARGETS"
+if [[ "$BUILD_TARGET" == *"windows-gnu"* ]] && docker info >/dev/null 2>&1; then
+    # Use cross-rs Docker image for windows-gnu: the image bundles a matching
+    # LLVM + MinGW toolchain, avoiding the host's glibc/llvm-dlltool version
+    # mismatch that breaks raw-dylib bcryptprimitives import lib generation.
+    CROSS_IMAGE="ghcr.io/cross-rs/x86_64-pc-windows-gnu:main"
+    echo "=== Building windows-gnu inside cross-rs Docker image ==="
+    echo "  Image: $CROSS_IMAGE"
 
-echo "=== Building CLI installer ==="
-CMD="cargo run -p rim_dev -- dist --cli"
-if $BINARY_ONLY; then
-    CMD="$CMD -b"
-fi
-CMD="$CMD --target $BUILD_TARGET --for $DIST_TARGETS"
-echo "  Running: $CMD"
-$CMD
+    docker pull "$CROSS_IMAGE" 2>&1 | tail -3 || echo "  (pull completed with warnings)"
 
-# Build GUI inside Docker
-if ! $SKIP_GUI; then
-    if ! command -v docker >/dev/null 2>&1; then
-        echo "WARNING: docker not available, skipping GUI build"
-    else
-        echo "=== Building GUI via Docker ==="
-        DIST_NAME=""
-        case "$DIST_TARGETS" in
-            *windows*)      echo "WARNING: GUI build skipped for Windows target" ;;
-            *aarch64*)      DIST_NAME="${DOCKER_IMAGE_AARCH64:-dist-aarch64-linux}" ;;
-            *x86_64*)       DIST_NAME="${DOCKER_IMAGE_X86_64:-dist-x86-64-linux}" ;;
-        esac
-        if [[ -n "$DIST_NAME" ]]; then
-            bash ci/scripts/build-in-docker.sh "$DIST_NAME"
+    docker run --rm \
+        -v "$(pwd)":/project \
+        -v "$HOME/.cargo/registry":/root/.cargo/registry \
+        -w /project \
+        "$CROSS_IMAGE" \
+        bash -c "
+            set -euo pipefail
+            # Configure cargo mirror inside container
+            mkdir -p .cargo
+            cat > .cargo/config.toml <<'CARGOEOF'
+[net]
+git-fetch-with-cli = true
+[source.crates-io]
+replace-with = 'xuanwu-sparse'
+[source.xuanwu-sparse]
+registry = 'sparse+https://mirror.xuanwu.openatom.cn/index/'
+CARGOEOF
+            # Exclude rim_gui (same as native build)
+            sed -i 's|\"rim_gui/src-tauri\", ||' Cargo.toml
+
+            echo '=== Vendoring offline packages ==='
+            cargo run -p rim_dev -- vendor --for $DIST_TARGETS
+
+            echo '=== Building CLI installer ==='
+            cargo run -p rim_dev -- dist --cli --target $BUILD_TARGET --for $DIST_TARGETS
+        "
+    DOCKER_EXIT=$?
+    if [ $DOCKER_EXIT -ne 0 ]; then
+        echo "ERROR: Docker build failed with exit code $DOCKER_EXIT"
+        exit $DOCKER_EXIT
+    fi
+    # GUI: always skip inside Docker (Docker-in-Docker not needed for win target)
+    SKIP_GUI=true
+else
+    echo "=== Vendoring offline packages ==="
+    cargo run -p rim_dev -- vendor --for "$DIST_TARGETS"
+
+    echo "=== Building CLI installer ==="
+    CMD="cargo run -p rim_dev -- dist --cli"
+    if $BINARY_ONLY; then
+        CMD="$CMD -b"
+    fi
+    CMD="$CMD --target $BUILD_TARGET --for $DIST_TARGETS"
+    echo "  Running: $CMD"
+    $CMD
+
+    # Build GUI inside Docker (linux targets only)
+    if ! $SKIP_GUI; then
+        if ! command -v docker >/dev/null 2>&1; then
+            echo "WARNING: docker not available, skipping GUI build"
+        else
+            echo "=== Building GUI via Docker ==="
+            DIST_NAME=""
+            case "$DIST_TARGETS" in
+                *windows*)      echo "WARNING: GUI build skipped for Windows target" ;;
+                *aarch64*)      DIST_NAME="${DOCKER_IMAGE_AARCH64:-dist-aarch64-linux}" ;;
+                *x86_64*)       DIST_NAME="${DOCKER_IMAGE_X86_64:-dist-x86-64-linux}" ;;
+            esac
+            if [[ -n "$DIST_NAME" ]]; then
+                bash ci/scripts/build-in-docker.sh "$DIST_NAME"
+            fi
         fi
     fi
 fi
