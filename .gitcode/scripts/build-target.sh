@@ -145,28 +145,23 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
-        # Rust expects llvm-dlltool for raw-dylib import-lib generation on windows-gnu.
-        # First try rustup llvm-tools-preview. If not found, leave DLLTOOL unset -
-        # Rust will fall back to its internal LLVM, which is guaranteed compatible.
-        echo "  Installing llvm-tools-preview..."
-        rustup component add llvm-tools-preview 2>&1 || echo "  WARN: llvm-tools-preview install failed"
-
+        # Rust needs llvm-dlltool for raw-dylib import-lib generation on windows-gnu.
+        # The mingw toolchain (already downloaded above) bundles a compatible one.
+        # Use it explicitly — with Rust 1.85.0 the LLVM versions match.
+        MINGW_BIN="$HOME/mingw-toolchain/bin"
         export DLLTOOL=""
-        RUST_SYSROOT=$(rustc --print sysroot)
-        LLVM_DLLTOOL=$(find "$RUST_SYSROOT" -name "llvm-dlltool" -type f 2>/dev/null | head -1)
-        echo "  Rust sysroot: $RUST_SYSROOT"
-        rustc -vV 2>&1 | grep -i llvm | head -1 || true
-
-        if [ -n "$LLVM_DLLTOOL" ] && [ -f "$LLVM_DLLTOOL" ]; then
-            echo "  Found llvm-dlltool in rustup sysroot: $LLVM_DLLTOOL"
-            "$LLVM_DLLTOOL" --version 2>&1 || true
-            export DLLTOOL="$LLVM_DLLTOOL"
+        if [ -x "$MINGW_BIN/llvm-dlltool" ]; then
+            export DLLTOOL="$MINGW_BIN/llvm-dlltool"
+            echo "  Using mingw llvm-dlltool: $DLLTOOL"
+            "$DLLTOOL" --version 2>&1 || true
+        elif command -v x86_64-w64-mingw32-dlltool >/dev/null 2>&1; then
+            export DLLTOOL="$(command -v x86_64-w64-mingw32-dlltool)"
+            echo "  WARN: llvm-dlltool not found, falling back to binutils dlltool: $DLLTOOL"
         else
-            echo "  llvm-dlltool not in rustup sysroot, relying on Rust's internal LLVM"
-            echo "  (if this fails with 'failed to add native library', Rust version"
-            echo "   may need to be adjusted to one whose LLVM matches the toolchain)"
+            echo "  WARN: no dlltool found, relying on Rust's internal LLVM"
         fi
-        echo "  DLLTOOL=${DLLTOOL:-<unset, using Rust internal>}"
+        echo "  DLLTOOL=${DLLTOOL:-<unset>}"
+        echo "  Rust LLVM: $(rustc -vV 2>&1 | grep -i llvm | head -1 || true)"
     fi
 fi
 

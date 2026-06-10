@@ -142,6 +142,10 @@ registry = "sparse+https://mirror.xuanwu.openatom.cn/index/"
 
 [registries.xuanwu]
 index = "https://mirror.xuanwu.openatom.cn/crates.io-index"
+
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+ar = "x86_64-w64-mingw32-ar"
 CARGOEOF
 
 echo "=== Installing Python httpx for release script ==="
