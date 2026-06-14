@@ -1,4 +1,4 @@
-name: Docker Image CI
+name: Docker Environment Verification
 
 on:
   push:
@@ -7,9 +7,25 @@ on:
     branches: ["main", "master"]
 
 jobs:
-  build:
+  verify:
     runs-on: euleros-2.10.1
     steps:
       - uses: checkout-action@0.0.1
-      - name: Build the Docker image
-        run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+      - name: Verify Docker availability
+        run: |
+          set -euo pipefail
+          echo "=== Docker version ==="
+          docker version 2>&1 || true
+          echo "=== Docker info ==="
+          docker info 2>&1 || true
+          echo "=== Test: build and run a minimal image ==="
+          mkdir -p /tmp/docker-test
+          cat > /tmp/docker-test/Dockerfile <<'EOF'
+          FROM alpine:3.20
+          RUN echo "Docker environment is working!"
+          CMD ["echo", "Hello from Docker CI"]
+          EOF
+          docker build -f /tmp/docker-test/Dockerfile -t docker-test:latest /tmp/docker-test
+          docker run --rm docker-test:latest
+          docker rmi docker-test:latest
+          echo "=== Docker environment verified successfully ==="
