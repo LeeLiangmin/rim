@@ -164,26 +164,29 @@ if $INSTALL_WIN_CROSS; then
     echo "=== Installing Docker static binary (for windows-gnu cross-rs build) ==="
     if ! command -v docker >/dev/null 2>&1; then
         DOCKER_VERSION="${DOCKER_VERSION:-24.0.9}"
-        # Try official URL first, fallback to OBS mirror
         DOCKER_URLS="
-            https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/docker-${DOCKER_VERSION}.tgz
+            https://mirrors.huaweicloud.com/docker-ce/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz
             https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz
         "
         DOCKER_OK=false
         for url in $DOCKER_URLS; do
             echo "  Trying: $url"
-            if curl -sSL --connect-timeout 10 --max-time 180 "$url" -o /tmp/docker.tgz 2>/dev/null; then
-                tar xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1
-                rm -f /tmp/docker.tgz
-                DOCKER_OK=true
-                break
+            rm -f /tmp/docker.tgz
+            curl -sSL --connect-timeout 10 --max-time 180 "$url" -o /tmp/docker.tgz 2>/dev/null || true
+            if [ -f /tmp/docker.tgz ] && file /tmp/docker.tgz 2>/dev/null | grep -q 'gzip'; then
+                if tar xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1 2>/dev/null; then
+                    rm -f /tmp/docker.tgz
+                    DOCKER_OK=true
+                    break
+                fi
             fi
-            echo "  (failed, trying next mirror)"
+            echo "  (failed, trying next)"
         done
+        rm -f /tmp/docker.tgz
         if $DOCKER_OK; then
             echo "  Docker $(docker --version 2>&1 || true) installed"
         else
-            echo "  WARNING: failed to download Docker static binary from all sources"
+            echo "  WARNING: failed to download Docker static binary (will fall back to native build)"
         fi
     else
         echo "  Docker already installed: $(docker --version 2>&1 || true)"
