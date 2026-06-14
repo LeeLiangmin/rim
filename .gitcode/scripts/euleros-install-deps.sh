@@ -146,25 +146,6 @@ index = "https://mirror.xuanwu.openatom.cn/crates.io-index"
 [target.x86_64-pc-windows-gnu]
 linker = "x86_64-w64-mingw32-gcc"
 ar = "x86_64-w64-mingw32-ar"
-# getrandom 0.3.x default Windows backend links bcryptprimitives via raw-dylib,
-# which requires rustc to invoke dlltool to generate the import lib at compile
-# time. On this cross-compile host (EulerOS, no usable dlltool), that fails with
-# "failed to add native library bcryptprimitives.dll_imports.lib".
-# Force the legacy RtlGenRandom backend (advapi32, plain link, mingw ships
-# libadvapi32.a) so no dlltool/raw-dylib is needed.
-# - getrandom_windows_legacy: cfg name used by getrandom 0.3.2..0.3.3
-# - getrandom_backend="windows_legacy": cfg name used by getrandom 0.3.4+
-# Both are set so this stays correct if Cargo.lock is later updated.
-rustflags = [
-  "--cfg", "getrandom_windows_legacy",
-  "--cfg", "getrandom_backend=\"windows_legacy\"",
-]
-
-[target.x86_64-pc-windows-msvc]
-rustflags = [
-  "--cfg", "getrandom_windows_legacy",
-  "--cfg", "getrandom_backend=\"windows_legacy\"",
-]
 CARGOEOF
 
 echo "=== Installing Python httpx for release script ==="
