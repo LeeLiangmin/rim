@@ -3565,6 +3565,7 @@ dependencies = [
  "colored",
  "dirs",
  "env_proxy",
+ "getrandom 0.2.15",
  "glob",
  "indexmap 2.9.0",
  "libc",

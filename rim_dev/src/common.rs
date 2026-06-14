@@ -4,10 +4,14 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
+use std::thread;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Result};
 use rim_common::utils::{copy_as, walk_dir};
+
+const DOWNLOAD_RETRIES: u32 = 3;
+const DOWNLOAD_RETRY_DELAY_MS: u64 = 2000;
 
 fn rim_gui_dir() -> &'static Path {
     static RIM_GUI_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -135,11 +139,31 @@ where
 }
 
 /// Download a file from `url` to local disk, do nothing if it already exists.
+/// Retries up to 3 times on transient failures (5xx, connection reset, timeout).
 pub fn download<P: AsRef<Path>>(url: &str, dest: P) -> Result<()> {
     if dest.as_ref().is_file() {
         return Ok(());
     }
 
+    let mut last_err = None;
+    for attempt in 0..DOWNLOAD_RETRIES {
+        if attempt > 0 {
+            let delay = Duration::from_millis(DOWNLOAD_RETRY_DELAY_MS * attempt as u64);
+            eprintln!("  download retry {attempt}/{}, waiting {delay:?}...", DOWNLOAD_RETRIES - 1);
+            thread::sleep(delay);
+        }
+        match try_download(url, dest.as_ref()) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                eprintln!("  download attempt {}/{} failed: {e}", attempt + 1, DOWNLOAD_RETRIES);
+                last_err = Some(e);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow!("download failed after {DOWNLOAD_RETRIES} attempts: {url}")))
+}
+
+fn try_download(url: &str, dest: &Path) -> Result<()> {
     println!("downloading: {url}");
     let resp = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(180))
@@ -147,12 +171,14 @@ pub fn download<P: AsRef<Path>>(url: &str, dest: P) -> Result<()> {
         .get(url)
         .send()?;
     if !resp.status().is_success() {
-        bail!("failed when downloading from: {url}");
+        bail!(
+            "HTTP {} when downloading from: {url}",
+            resp.status().as_u16()
+        );
     }
 
     let mut temp_file = tempfile::Builder::new().tempfile_in(
-        dest.as_ref()
-            .parent()
+        dest.parent()
             .ok_or_else(|| anyhow!("cannot download to empty or root directory"))?,
     )?;
     let content = resp.bytes()?;

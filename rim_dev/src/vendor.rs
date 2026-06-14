@@ -198,8 +198,13 @@ fn gen_manifest_and_download_packages(args: &VendorArgs, toolkits: &mut Toolkits
                                 if args.should_download(name, target) {
                                     let dest = tools_dir.join(&filename);
                                     ensure_parent_dir(&dest)?;
-                                    if download(url.as_str(), &dest).is_ok() {
-                                        info_table.url_to_path(rel_path);
+                                    match download(url.as_str(), &dest) {
+                                        Ok(()) => {
+                                            info_table.url_to_path(rel_path);
+                                        }
+                                        Err(e) => {
+                                            eprintln!("  WARNING: failed to download tool {filename}: {e}");
+                                        }
                                     }
                                 }
                             }
