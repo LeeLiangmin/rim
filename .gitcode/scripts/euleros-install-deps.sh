@@ -146,52 +146,28 @@ index = "https://mirror.xuanwu.openatom.cn/crates.io-index"
 [target.x86_64-pc-windows-gnu]
 linker = "x86_64-w64-mingw32-gcc"
 ar = "x86_64-w64-mingw32-ar"
+# getrandom 0.3.x default Windows backend links bcryptprimitives via raw-dylib,
+# which requires rustc to invoke dlltool to generate the import lib at compile
+# time. On this cross-compile host (EulerOS, no usable dlltool), that fails with
+# "failed to add native library bcryptprimitives.dll_imports.lib".
+# Force the legacy RtlGenRandom backend (advapi32, plain link, mingw ships
+# libadvapi32.a) so no dlltool/raw-dylib is needed.
+# - getrandom_windows_legacy: cfg name used by getrandom 0.3.2..0.3.3
+# - getrandom_backend="windows_legacy": cfg name used by getrandom 0.3.4+
+# Both are set so this stays correct if Cargo.lock is later updated.
+rustflags = [
+  "--cfg", "getrandom_windows_legacy",
+  "--cfg", "getrandom_backend=\"windows_legacy\"",
+]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+  "--cfg", "getrandom_windows_legacy",
+  "--cfg", "getrandom_backend=\"windows_legacy\"",
+]
 CARGOEOF
 
 echo "=== Installing Python httpx for release script ==="
 python3 -c "import httpx" 2>/dev/null || pip3 install --quiet httpx || true
-
-echo "=== Installing LLVM (for llvm-dlltool, used by windows-gnu cross-compile) ==="
-install_pkg llvm clang llvm-devel 2>/dev/null || true
-if command -v llvm-dlltool >/dev/null 2>&1; then
-    echo "  llvm-dlltool: $(command -v llvm-dlltool)"
-else
-    echo "  llvm-dlltool not in system packages (will download from mirror if needed)"
-fi
-
-# Docker binary download (experimental: current CI K8s Pod has no Docker and
-# cannot start dockerd. Kept for future environments that support it.)
-if $INSTALL_WIN_CROSS; then
-    echo "=== Installing Docker static binary (for windows-gnu cross-rs build) ==="
-    if ! command -v docker >/dev/null 2>&1; then
-        DOCKER_VERSION="${DOCKER_VERSION:-24.0.9}"
-        DOCKER_URLS="
-            https://mirrors.huaweicloud.com/docker-ce/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz
-            https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz
-        "
-        DOCKER_OK=false
-        for url in $DOCKER_URLS; do
-            echo "  Trying: $url"
-            rm -f /tmp/docker.tgz
-            curl -sSL --connect-timeout 10 --max-time 180 "$url" -o /tmp/docker.tgz 2>/dev/null || true
-            if [ -f /tmp/docker.tgz ] && file /tmp/docker.tgz 2>/dev/null | grep -q 'gzip'; then
-                if tar xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1 2>/dev/null; then
-                    rm -f /tmp/docker.tgz
-                    DOCKER_OK=true
-                    break
-                fi
-            fi
-            echo "  (failed, trying next)"
-        done
-        rm -f /tmp/docker.tgz
-        if $DOCKER_OK; then
-            echo "  Docker $(docker --version 2>&1 || true) installed"
-        else
-            echo "  WARNING: failed to download Docker static binary (will fall back to native build)"
-        fi
-    else
-        echo "  Docker already installed: $(docker --version 2>&1 || true)"
-    fi
-fi
 
 echo "=== Dependencies installed successfully ==="

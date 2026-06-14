@@ -149,98 +149,40 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         echo "  Using x86_64-w64-mingw32-gcc for Windows cross-compilation"
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
-
-        # Rust needs llvm-dlltool for raw-dylib import-lib generation on windows-gnu.
-        # The mingw toolchain (already downloaded above) bundles a compatible one.
-        # Use it explicitly — with Rust 1.85.0 the LLVM versions match.
-        MINGW_BIN="$HOME/mingw-toolchain/bin"
-        export DLLTOOL=""
-        if [ -x "$MINGW_BIN/llvm-dlltool" ]; then
-            export DLLTOOL="$MINGW_BIN/llvm-dlltool"
-            echo "  Using mingw llvm-dlltool: $DLLTOOL"
-            "$DLLTOOL" --version 2>&1 || true
-        elif command -v x86_64-w64-mingw32-dlltool >/dev/null 2>&1; then
-            export DLLTOOL="$(command -v x86_64-w64-mingw32-dlltool)"
-            echo "  WARN: llvm-dlltool not found, falling back to binutils dlltool: $DLLTOOL"
-        else
-            echo "  WARN: no dlltool found, relying on Rust's internal LLVM"
-        fi
-        echo "  DLLTOOL=${DLLTOOL:-<unset>}"
-        echo "  Rust LLVM: $(rustc -vV 2>&1 | grep -i llvm | head -1 || true)"
+        # getrandom 0.3.x's default Windows backend links bcryptprimitives via
+        # raw-dylib, which forces rustc to call dlltool at compile time. That is
+        # unavailable on this host, so the legacy RtlGenRandom backend is forced
+        # via .cargo/config.toml rustflags (set in euleros-install-deps.sh).
+        # No dlltool / LLVM / DLLTOOL env var is needed with that config.
     fi
 fi
 
-if [[ "$BUILD_TARGET" == *"windows-gnu"* ]] && docker info >/dev/null 2>&1; then
-    # Use cross-rs Docker image for windows-gnu: the image bundles a matching
-    # LLVM + MinGW toolchain, avoiding the host's glibc/llvm-dlltool version
-    # mismatch that breaks raw-dylib bcryptprimitives import lib generation.
-    CROSS_IMAGE="ghcr.io/cross-rs/x86_64-pc-windows-gnu:main"
-    echo "=== Building windows-gnu inside cross-rs Docker image ==="
-    echo "  Image: $CROSS_IMAGE"
+echo "=== Vendoring offline packages ==="
+cargo run -p rim_dev -- vendor --for "$DIST_TARGETS"
 
-    docker pull "$CROSS_IMAGE" 2>&1 | tail -3 || echo "  (pull completed with warnings)"
+echo "=== Building CLI installer ==="
+CMD="cargo run -p rim_dev -- dist --cli"
+if $BINARY_ONLY; then
+    CMD="$CMD -b"
+fi
+CMD="$CMD --target $BUILD_TARGET --for $DIST_TARGETS"
+echo "  Running: $CMD"
+$CMD
 
-    docker run --rm \
-        -v "$(pwd)":/project \
-        -v "$HOME/.cargo/registry":/root/.cargo/registry \
-        -w /project \
-        "$CROSS_IMAGE" \
-        bash -c "
-            set -euo pipefail
-            # Configure cargo mirror inside container
-            mkdir -p .cargo
-            cat > .cargo/config.toml <<'CARGOEOF'
-[net]
-git-fetch-with-cli = true
-[source.crates-io]
-replace-with = 'xuanwu-sparse'
-[source.xuanwu-sparse]
-registry = 'sparse+https://mirror.xuanwu.openatom.cn/index/'
-CARGOEOF
-            # Exclude rim_gui (same as native build)
-            sed -i 's|\"rim_gui/src-tauri\", ||' Cargo.toml
-
-            echo '=== Vendoring offline packages ==='
-            cargo run -p rim_dev -- vendor --for $DIST_TARGETS
-
-            echo '=== Building CLI installer ==='
-            cargo run -p rim_dev -- dist --cli --target $BUILD_TARGET --for $DIST_TARGETS
-        "
-    DOCKER_EXIT=$?
-    if [ $DOCKER_EXIT -ne 0 ]; then
-        echo "ERROR: Docker build failed with exit code $DOCKER_EXIT"
-        exit $DOCKER_EXIT
-    fi
-    # GUI: always skip inside Docker (Docker-in-Docker not needed for win target)
-    SKIP_GUI=true
-else
-    echo "=== Vendoring offline packages ==="
-    cargo run -p rim_dev -- vendor --for "$DIST_TARGETS"
-
-    echo "=== Building CLI installer ==="
-    CMD="cargo run -p rim_dev -- dist --cli"
-    if $BINARY_ONLY; then
-        CMD="$CMD -b"
-    fi
-    CMD="$CMD --target $BUILD_TARGET --for $DIST_TARGETS"
-    echo "  Running: $CMD"
-    $CMD
-
-    # Build GUI inside Docker (linux targets only)
-    if ! $SKIP_GUI; then
-        if ! command -v docker >/dev/null 2>&1; then
-            echo "WARNING: docker not available, skipping GUI build"
-        else
-            echo "=== Building GUI via Docker ==="
-            DIST_NAME=""
-            case "$DIST_TARGETS" in
-                *windows*)      echo "WARNING: GUI build skipped for Windows target" ;;
-                *aarch64*)      DIST_NAME="${DOCKER_IMAGE_AARCH64:-dist-aarch64-linux}" ;;
-                *x86_64*)       DIST_NAME="${DOCKER_IMAGE_X86_64:-dist-x86-64-linux}" ;;
-            esac
-            if [[ -n "$DIST_NAME" ]]; then
-                bash ci/scripts/build-in-docker.sh "$DIST_NAME"
-            fi
+# Build GUI inside Docker (linux targets only)
+if ! $SKIP_GUI; then
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "WARNING: docker not available, skipping GUI build"
+    else
+        echo "=== Building GUI via Docker ==="
+        DIST_NAME=""
+        case "$DIST_TARGETS" in
+            *windows*)      echo "WARNING: GUI build skipped for Windows target" ;;
+            *aarch64*)      DIST_NAME="${DOCKER_IMAGE_AARCH64:-dist-aarch64-linux}" ;;
+            *x86_64*)       DIST_NAME="${DOCKER_IMAGE_X86_64:-dist-x86-64-linux}" ;;
+        esac
+        if [[ -n "$DIST_NAME" ]]; then
+            bash ci/scripts/build-in-docker.sh "$DIST_NAME"
         fi
     fi
 fi
