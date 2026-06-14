@@ -154,26 +154,26 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         # windows-gnu (windows-result, windows-sys, getrandom 0.3, etc.).
         # rustc invokes the UNPREFIXED "dlltool", but the mingw cross-toolchain
         # ships it as "x86_64-w64-mingw32-dlltool" — create the expected
-        # no-prefix symlink so rustc can find it. Must be the binutils dlltool,
-        # NOT llvm-dlltool (binutils ld later needs GNU-format import libs).
+        # no-prefix symlink so rustc can find it.
         MINGW_BIN="$(dirname "$(command -v x86_64-w64-mingw32-gcc)")"
         if [ -x "$MINGW_BIN/x86_64-w64-mingw32-dlltool" ]; then
             ln -sf "$MINGW_BIN/x86_64-w64-mingw32-dlltool" "$MINGW_BIN/dlltool"
             echo "  Linked dlltool -> x86_64-w64-mingw32-dlltool in $MINGW_BIN"
         elif [ ! -x "$MINGW_BIN/dlltool" ]; then
-            echo "  WARNING: no binutils dlltool found in $MINGW_BIN"
+            echo "  WARNING: no dlltool found in $MINGW_BIN"
             echo "    raw-dylib crates (windows-result/getrandom) will fail to link."
-            echo "    dlltool-like files present:"
-            ls "$MINGW_BIN" 2>/dev/null | grep -i dlltool || echo "      (none)"
         fi
         # Ensure rustc can find dlltool on PATH (it searches PATH, not env vars)
         case ":$PATH:" in
             *":$MINGW_BIN:"*) : ;;
             *) export PATH="$MINGW_BIN:$PATH" ;;
         esac
+        # Report dlltool availability. NOTE: do NOT pipe `dlltool --version`
+        # through `head` here — under `set -o pipefail` the SIGPIPE from head
+        # exiting early surfaces as exit 141 and aborts the whole script.
         if command -v dlltool >/dev/null 2>&1; then
             echo "  dlltool: $(command -v dlltool)"
-            dlltool --version 2>&1 | head -1 | sed 's/^/    /'
+            echo "    $(dlltool --version 2>&1 | tr '\n' ' ')"
         else
             echo "  WARNING: dlltool still not on PATH after mingw setup"
         fi
