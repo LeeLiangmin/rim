@@ -60,9 +60,9 @@ fi
 if $INSTALL_WIN_CROSS; then
     echo "=== Installing Windows cross-compilation toolchain ==="
     if command -v apt-get >/dev/null 2>&1; then
-        install_pkg mingw-w64 gcc-mingw-w64-x86-64
+        install_pkg mingw-w64 gcc-mingw-w64-x86-64 p7zip-full
     else
-        install_pkg mingw64-gcc mingw64-headers mingw64-winpthreads mingw64-crt
+        install_pkg mingw64-gcc mingw64-headers mingw64-winpthreads mingw64-crt p7zip
     fi
 fi
 
@@ -146,17 +146,10 @@ index = "https://mirror.xuanwu.openatom.cn/crates.io-index"
 [target.x86_64-pc-windows-gnu]
 linker = "x86_64-w64-mingw32-gcc"
 ar = "x86_64-w64-mingw32-ar"
-# Two fixes work TOGETHER (verified empirically on the EulerOS CI host):
-#  1) build-target.sh INSERTS "-C dlltool=<path>" into this rustflags array
-#     (after mingw is installed) so rustc generates import libs for raw-dylib
-#     crates. That covers kernel32 (windows-result/windows-strings/windows-link).
-#  2) BUT the bundled llvm-dlltool FAILS on bcryptprimitives, which getrandom
-#     0.3.x's default (ProcessPrng) backend needs. So we ALSO force getrandom's
-#     legacy RtlGenRandom backend (advapi32, plain link, no raw-dylib) to
-#     sidestep bcryptprimitives entirely.
-# Both cfg names are set for forward compat across getrandom versions:
-#  - getrandom_windows_legacy       : getrandom 0.3.2 / 0.3.3
-#  - getrandom_backend="windows_legacy" : getrandom 0.3.4+
+# build-target.sh INSERTS "-C dlltool=<path>" pointing to the real GNU dlltool
+# (from the niXman/winlibs GCC mingw downloaded during vendoring). That covers
+# kernel32, bcryptprimitives, and all other raw-dylib system-DLL import libs.
+# getrandom legacy backends are kept as a belt-and-suspenders safety net.
 rustflags = [
   "--cfg", "getrandom_windows_legacy",
   "--cfg", "getrandom_backend=\"windows_legacy\"",
