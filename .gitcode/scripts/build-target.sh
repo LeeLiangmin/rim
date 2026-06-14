@@ -150,32 +150,31 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
-        # rustc needs dlltool to generate import libs for raw-dylib crates on
-        # windows-gnu (windows-result, windows-sys, getrandom 0.3, etc.).
-        # rustc invokes the UNPREFIXED "dlltool", but the mingw cross-toolchain
-        # ships it as "x86_64-w64-mingw32-dlltool" — create the expected
-        # no-prefix symlink so rustc can find it.
+        # rustc on windows-gnu generates raw-dylib import libs (for
+        # windows-result/kernel32, windows-strings, windows-sys, ...) by invoking
+        # a dlltool binary at link time. A PATH symlink is NOT reliable here --
+        # rustc has its own dlltool discovery and frequently fails to find it.
+        # The reliable fix is to point rustc at the dlltool explicitly via the
+        # `-C dlltool=<path>` codegen option, carried through Cargo by the
+        # per-target RUSTFLAGS env var (does NOT touch the host proc-macro build).
         MINGW_BIN="$(dirname "$(command -v x86_64-w64-mingw32-gcc)")"
-        if [ -x "$MINGW_BIN/x86_64-w64-mingw32-dlltool" ]; then
-            ln -sf "$MINGW_BIN/x86_64-w64-mingw32-dlltool" "$MINGW_BIN/dlltool"
-            echo "  Linked dlltool -> x86_64-w64-mingw32-dlltool in $MINGW_BIN"
-        elif [ ! -x "$MINGW_BIN/dlltool" ]; then
-            echo "  WARNING: no dlltool found in $MINGW_BIN"
-            echo "    raw-dylib crates (windows-result/getrandom) will fail to link."
-        fi
-        # Ensure rustc can find dlltool on PATH (it searches PATH, not env vars)
-        case ":$PATH:" in
-            *":$MINGW_BIN:"*) : ;;
-            *) export PATH="$MINGW_BIN:$PATH" ;;
-        esac
-        # Report dlltool availability. NOTE: do NOT pipe `dlltool --version`
-        # through `head` here — under `set -o pipefail` the SIGPIPE from head
-        # exiting early surfaces as exit 141 and aborts the whole script.
-        if command -v dlltool >/dev/null 2>&1; then
-            echo "  dlltool: $(command -v dlltool)"
-            echo "    $(dlltool --version 2>&1 | tr '\n' ' ')"
+        DLLTOOL_PATH=""
+        for cand in \
+            "$MINGW_BIN/x86_64-w64-mingw32-dlltool" \
+            "$MINGW_BIN/dlltool" \
+            "$(command -v x86_64-w64-mingw32-dlltool 2>/dev/null)" \
+            "$(command -v llvm-dlltool 2>/dev/null)"; do
+            if [ -n "$cand" ] && [ -x "$cand" ]; then
+                DLLTOOL_PATH="$cand"; break
+            fi
+        done
+        if [ -n "$DLLTOOL_PATH" ]; then
+            echo "  dlltool (explicit): $DLLTOOL_PATH"
+            echo "    $( "$DLLTOOL_PATH" --version 2>&1 | tr '\n' ' ' )"
+            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C dlltool=$DLLTOOL_PATH"
+            echo "  Set CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS=-C dlltool=$DLLTOOL_PATH"
         else
-            echo "  WARNING: dlltool still not on PATH after mingw setup"
+            echo "  WARNING: no dlltool found; raw-dylib crates will fail to link"
         fi
     fi
 fi
