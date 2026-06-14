@@ -146,6 +146,21 @@ index = "https://mirror.xuanwu.openatom.cn/crates.io-index"
 [target.x86_64-pc-windows-gnu]
 linker = "x86_64-w64-mingw32-gcc"
 ar = "x86_64-w64-mingw32-ar"
+# Two fixes work TOGETHER (verified empirically on the EulerOS CI host):
+#  1) build-target.sh symlinks x86_64-w64-mingw32-dlltool -> dlltool so rustc
+#     can generate import libs for raw-dylib crates. llvm-dlltool handles
+#     kernel32 (windows-result/windows-link) correctly.
+#  2) BUT llvm-dlltool FAILS to generate the bcryptprimitives import lib that
+#     getrandom 0.3.x's default (ProcessPrng) backend needs. So we also force
+#     getrandom's legacy RtlGenRandom backend (advapi32, plain link, no
+#     raw-dylib) to sidestep bcryptprimitives entirely.
+# Both cfg names are set for forward compat across getrandom versions:
+#  - getrandom_windows_legacy       : getrandom 0.3.2 / 0.3.3
+#  - getrandom_backend="windows_legacy" : getrandom 0.3.4+
+rustflags = [
+  "--cfg", "getrandom_windows_legacy",
+  "--cfg", "getrandom_backend=\"windows_legacy\"",
+]
 CARGOEOF
 
 echo "=== Installing Python httpx for release script ==="
