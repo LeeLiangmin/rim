@@ -175,15 +175,37 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
             echo "  dlltool (explicit): $DLLTOOL_PATH"
             echo "    $( "$DLLTOOL_PATH" --version 2>&1 | tr '\n' ' ' )"
             CFG=".cargo/config.toml"
-            # Idempotent: only insert if not already present, and only if the
-            # config has the windows-gnu rustflags block to mutate.
-            if grep -q '\[target.x86_64-pc-windows-gnu\]' "$CFG" 2>/dev/null \
-               && ! grep -q -- '-C dlltool=' "$CFG" 2>/dev/null; then
-                # Insert right after the 'rustflags = [' line so it lands first
-                # in the array, keeping the existing cfg entries intact.
-                sed -i '/^\s*rustflags\s*=\s*\[/a\  "-C", "dlltool='"$DLLTOOL_PATH"'",' "$CFG"
-                echo "  Inserted -C dlltool= into [target.x86_64-pc-windows-gnu].rustflags"
-            fi
+            # Write '-C dlltool=<path>' into the [target.x86_64-pc-windows-gnu]
+            # rustflags array in .cargo/config.toml. We use python3 (already a
+            # build dependency) instead of sed/grep because shell/grep handling
+            # of literal '[' in '[target...]' proved unreliable across shells,
+            # and the previous sed-based version silently did nothing on CI.
+            # This is idempotent (re-running won't duplicate the flag).
+            python3 - "$CFG" "$DLLTOOL_PATH" <<'PYEOF' || echo "  WARNING: failed to patch .cargo/config.toml"
+import re, sys
+path, dlltool = sys.argv[1], sys.argv[2]
+with open(path, encoding='utf-8') as f:
+    txt = f.read()
+# Match the rustflags array body (NOT the whole file, which may contain
+# '-C dlltool=' in comments) so we can tell whether the flag is really in
+# the array. A real entry looks like:  "dlltool=<path>"
+pat = re.compile(
+    r'(\[target\.x86_64-pc-windows-gnu\][^\[]*?rustflags\s*=\s*\[)([^\]]*\])',
+    re.S)
+m = pat.search(txt)
+if not m:
+    print('  WARNING: no [target.x86_64-pc-windows-gnu] rustflags block found')
+    sys.exit(1)
+head, body = m.group(1), m.group(2)
+if '"dlltool=' in body:
+    print('  dlltool flag already in rustflags array')
+else:
+    new = head + '\n  "-C", "dlltool=' + dlltool + '",' + body
+    txt = txt[:m.start()] + new + txt[m.end():]
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(txt)
+    print('  Inserted -C dlltool= into [target.x86_64-pc-windows-gnu].rustflags')
+PYEOF
             echo "  --- [target.x86_64-pc-windows-gnu] block now: ---"
             awk '/\[target\.x86_64-pc-windows-gnu\]/{p=1} p{print} /^]/{if(p)p=0}' "$CFG" \
                 | sed 's/^/      /'
