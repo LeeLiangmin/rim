@@ -152,11 +152,14 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
 
         # rustc on windows-gnu generates raw-dylib import libs (for
         # windows-result/kernel32, windows-strings, windows-sys, ...) by invoking
-        # a dlltool binary at link time. A PATH symlink is NOT reliable here --
-        # rustc has its own dlltool discovery and frequently fails to find it.
-        # The reliable fix is to point rustc at the dlltool explicitly via the
-        # `-C dlltool=<path>` codegen option, carried through Cargo by the
-        # per-target RUSTFLAGS env var (does NOT touch the host proc-macro build).
+        # a dlltool binary at link time. PATH symlinks AND the
+        # CARGO_TARGET_*_RUSTFLAGS env var BOTH fail to reach rustc here, because
+        # .cargo/config.toml already declares [target.*] rustflags and Cargo lets
+        # config.toml override the env var. So the only reliable channel is to
+        # WRITE the `-C dlltool=<path>` flag INTO .cargo/config.toml's
+        # [target.x86_64-pc-windows-gnu].rustflags array, next to the existing
+        # getrandom_windows_legacy cfg. The mingw toolchain was just installed
+        # above, so the dlltool path is known now.
         MINGW_BIN="$(dirname "$(command -v x86_64-w64-mingw32-gcc)")"
         DLLTOOL_PATH=""
         for cand in \
@@ -171,8 +174,19 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         if [ -n "$DLLTOOL_PATH" ]; then
             echo "  dlltool (explicit): $DLLTOOL_PATH"
             echo "    $( "$DLLTOOL_PATH" --version 2>&1 | tr '\n' ' ' )"
-            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C dlltool=$DLLTOOL_PATH"
-            echo "  Set CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS=-C dlltool=$DLLTOOL_PATH"
+            CFG=".cargo/config.toml"
+            # Idempotent: only insert if not already present, and only if the
+            # config has the windows-gnu rustflags block to mutate.
+            if grep -q '\[target.x86_64-pc-windows-gnu\]' "$CFG" 2>/dev/null \
+               && ! grep -q -- '-C dlltool=' "$CFG" 2>/dev/null; then
+                # Insert right after the 'rustflags = [' line so it lands first
+                # in the array, keeping the existing cfg entries intact.
+                sed -i '/^\s*rustflags\s*=\s*\[/a\  "-C", "dlltool='"$DLLTOOL_PATH"'",' "$CFG"
+                echo "  Inserted -C dlltool= into [target.x86_64-pc-windows-gnu].rustflags"
+            fi
+            echo "  --- [target.x86_64-pc-windows-gnu] block now: ---"
+            awk '/\[target\.x86_64-pc-windows-gnu\]/{p=1} p{print} /^]/{if(p)p=0}' "$CFG" \
+                | sed 's/^/      /'
         else
             echo "  WARNING: no dlltool found; raw-dylib crates will fail to link"
         fi
