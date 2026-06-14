@@ -159,7 +159,8 @@ else
     echo "  llvm-dlltool not in system packages (will download from mirror if needed)"
 fi
 
-# Docker is only needed for windows-gnu cross-rs build
+# Docker binary download (experimental: current CI K8s Pod has no Docker and
+# cannot start dockerd. Kept for future environments that support it.)
 if $INSTALL_WIN_CROSS; then
     echo "=== Installing Docker static binary (for windows-gnu cross-rs build) ==="
     if ! command -v docker >/dev/null 2>&1; then
@@ -190,26 +191,6 @@ if $INSTALL_WIN_CROSS; then
         fi
     else
         echo "  Docker already installed: $(docker --version 2>&1 || true)"
-    fi
-
-    echo "=== Starting Docker daemon ==="
-    if command -v docker >/dev/null 2>&1; then
-        dockerd --data-root /tmp/docker --log-level error --iptables=false --ip6tables=false 2>/tmp/dockerd.log &
-        DOCKERD_PID=$!
-        DOCKER_READY=false
-        for i in $(seq 1 10); do
-            if docker info >/dev/null 2>&1; then
-                DOCKER_READY=true
-                break
-            fi
-            sleep 1
-        done
-        if $DOCKER_READY; then
-            echo "  Docker daemon started (PID $DOCKERD_PID)"
-        else
-            echo "  WARNING: Docker daemon failed to start (K8s Pod may not allow privileged mode)"
-            cat /tmp/dockerd.log 2>/dev/null | tail -5 || true
-        fi
     fi
 fi
 

@@ -125,19 +125,24 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
     fi
 
     if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
-        echo "  x86_64-w64-mingw32-gcc not found, downloading mingw toolchain from OBS..."
+        echo "  x86_64-w64-mingw32-gcc not found, downloading mingw toolchain..."
         TOOLCHAIN_DIR="$HOME/mingw-toolchain"
         TOOLCHAIN_URL="${MINGW_TOOLCHAIN_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/mingw-w64-cross.tar.xz}"
+        TOOLCHAIN_URL2="${MINGW_TOOLCHAIN_URL2:-https://mirrors.huaweicloud.com/mingw-w64/mingw-w64-cross.tar.xz}"
         mkdir -p "$TOOLCHAIN_DIR"
 
         if curl -sSL --connect-timeout 10 --max-time 300 "$TOOLCHAIN_URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
-            export PATH="$TOOLCHAIN_DIR/bin:$PATH"
-            echo "  Installed mingw toolchain to $TOOLCHAIN_DIR"
+            echo "  Installed from primary URL"
+        elif curl -sSL --connect-timeout 10 --max-time 300 "$TOOLCHAIN_URL2" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
+            echo "  Installed from fallback URL"
         else
-            echo "ERROR: failed to download mingw cross-compiler from OBS"
-            echo "  URL: $TOOLCHAIN_URL"
+            echo "ERROR: failed to download mingw cross-compiler from all sources"
+            echo "  Primary: $TOOLCHAIN_URL"
+            echo "  Fallback: $TOOLCHAIN_URL2"
             exit 1
         fi
+        export PATH="$TOOLCHAIN_DIR/bin:$PATH"
+        echo "  Installed mingw toolchain to $TOOLCHAIN_DIR"
     fi
 
     if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
