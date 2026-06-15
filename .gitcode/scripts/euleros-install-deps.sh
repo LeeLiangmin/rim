@@ -60,9 +60,9 @@ fi
 if $INSTALL_WIN_CROSS; then
     echo "=== Installing Windows cross-compilation toolchain ==="
     if command -v apt-get >/dev/null 2>&1; then
-        install_pkg mingw-w64 gcc-mingw-w64-x86-64 p7zip-full
+        install_pkg mingw-w64 gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 p7zip-full
     else
-        install_pkg mingw64-gcc mingw64-headers mingw64-winpthreads mingw64-crt p7zip
+        install_pkg mingw64-gcc mingw64-headers mingw64-winpthreads mingw64-crt mingw64-binutils p7zip
     fi
 fi
 

@@ -4,7 +4,7 @@ mod download;
 mod extraction;
 mod file_system;
 mod log;
-pub(crate) mod obs_sign;
+pub mod obs_sign;
 mod process;
 mod progress_bar;
 

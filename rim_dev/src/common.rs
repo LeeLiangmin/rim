@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Result};
 use rim_common::utils::{copy_as, walk_dir};
+use url::Url;
 
 const DOWNLOAD_RETRIES: u32 = 3;
 const DOWNLOAD_RETRY_DELAY_MS: u64 = 2000;
@@ -165,11 +166,27 @@ pub fn download<P: AsRef<Path>>(url: &str, dest: P) -> Result<()> {
 
 fn try_download(url: &str, dest: &Path) -> Result<()> {
     println!("downloading: {url}");
-    let resp = reqwest::blocking::Client::builder()
+    let mut req = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(180))
         .build()?
-        .get(url)
-        .send()?;
+        .get(url);
+
+    let parsed_url = Url::parse(url).ok();
+    if let Some(ref u) = parsed_url {
+        if let Some(cred) = rim_common::build_config().find_obs_credential(u) {
+            let headers = rim_common::utils::obs_sign::obs_auth_headers(
+                &cred.access_key,
+                &cred.secret_key,
+                "GET",
+                u,
+            )?;
+            for (k, v) in headers {
+                req = req.header(&k, &v);
+            }
+        }
+    }
+
+    let resp = req.send()?;
     if !resp.status().is_success() {
         bail!(
             "HTTP {} when downloading from: {url}",

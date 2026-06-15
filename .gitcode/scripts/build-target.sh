@@ -150,34 +150,53 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
     fi
 
     # ── GNU binutils (provides real GNU dlltool for raw-dylib import libs) ──
-    # llvm-dlltool (bundled with the mingw toolchain above) cannot generate
+    # llvm-dlltool (bundled with the LLVM mingw toolchain above) cannot generate
     # import libraries for kernel32 and other system DLLs. The real GNU
-    # dlltool can. Downloaded from OBS as a pre-built tarball.
-    GNUBIN_URL="${GNUBIN_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/mingw-binutils-x86_64-2.42.tar.gz}"
+    # dlltool can. Try in order:
+    #   1. System mingw64-binutils package (if installed by euleros-install-deps.sh)
+    #   2. Download pre-built tarball from OBS
     GNUBIN_DIR="$HOME/gnu-binutils"
-    if [[ ! -x "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" ]]; then
-        echo "  Downloading GNU binutils for dlltool..."
-        mkdir -p "$GNUBIN_DIR"
-        GNUBIN_TGZ="$HOME/gnu-binutils.tar.gz"
-        if curl -sSL --connect-timeout 10 --max-time 120 -o "$GNUBIN_TGZ" "$GNUBIN_URL"; then
-            echo "  Downloaded $(stat -c%s "$GNUBIN_TGZ" 2>/dev/null || wc -c < "$GNUBIN_TGZ") bytes"
-            if tar -xf "$GNUBIN_TGZ" --strip-components=1 -C "$GNUBIN_DIR" 2>&1; then
+    REAL_DLLTOOL=""
+    # ── Strategy 1: system package ──
+    for cand in /usr/bin/x86_64-w64-mingw32-dlltool /usr/x86_64-w64-mingw32/bin/dlltool; do
+        if [ -x "$cand" ]; then
+            _gnu_ver="$("$cand" --version 2>&1 | head -1)"
+            if echo "$_gnu_ver" | grep -qi 'GNU'; then
+                REAL_DLLTOOL="$cand"
+                echo "  Found system GNU dlltool: $cand ($_gnu_ver)"
+                break
+            fi
+        fi
+    done
+    # ── Strategy 2: download from OBS ──
+    if [ -z "$REAL_DLLTOOL" ]; then
+        GNUBIN_URL="${GNUBIN_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/mingw-binutils-x86_64-2.42.tar.gz}"
+        if [[ ! -x "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" ]]; then
+            echo "  Downloading GNU binutils for dlltool..."
+            mkdir -p "$GNUBIN_DIR"
+            GNUBIN_TGZ="$HOME/gnu-binutils.tar.gz"
+            _http_code=$(curl -sSL --connect-timeout 10 --max-time 120 -o "$GNUBIN_TGZ" -w "%{http_code}" "$GNUBIN_URL" || echo "000")
+            _fsize=$(stat -c%s "$GNUBIN_TGZ" 2>/dev/null || wc -c < "$GNUBIN_TGZ")
+            echo "  Downloaded $_fsize bytes (HTTP $_http_code)"
+            if [ "$_http_code" != "200" ]; then
+                echo "  WARNING: GNU binutils download failed (HTTP $_http_code); will try llvm-dlltool as fallback"
+                rm -rf "$GNUBIN_DIR"
+            elif [ "$_fsize" -lt 10240 ]; then
+                echo "  WARNING: downloaded file too small ($_fsize bytes), likely an error page"
+                rm -rf "$GNUBIN_DIR"
+            elif tar -xf "$GNUBIN_TGZ" --strip-components=1 -C "$GNUBIN_DIR" 2>&1; then
                 echo "  GNU binutils installed to $GNUBIN_DIR"
             else
                 echo "  WARNING: tar extraction failed; will try llvm-dlltool as fallback"
                 rm -rf "$GNUBIN_DIR"
             fi
             rm -f "$GNUBIN_TGZ"
-        else
-            echo "  WARNING: GNU binutils download failed (curl exit $?); will try llvm-dlltool as fallback"
-            rm -rf "$GNUBIN_DIR"
         fi
-    fi
-
-    # Put GNU binutils FIRST in PATH so its dlltool and `as` are found
-    if [[ -d "$GNUBIN_DIR/bin" ]]; then
-        export PATH="$GNUBIN_DIR/bin:$PATH"
-        echo "  GNU binutils in PATH: $GNUBIN_DIR/bin"
+        if [[ -x "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" ]]; then
+            REAL_DLLTOOL="$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool"
+            export PATH="$GNUBIN_DIR/bin:$PATH"
+            echo "  GNU binutils in PATH: $GNUBIN_DIR/bin"
+        fi
     fi
 
     if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
@@ -191,15 +210,21 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         # etc.) that llvm-dlltool silently fails on.
         MINGW_BIN="$(dirname "$(command -v x86_64-w64-mingw32-gcc)")"
         DLLTOOL_PATH=""
-        # Prefer GNU dlltool
-        for cand in \
-            "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" \
-            "$GNUBIN_DIR/bin/dlltool"; do
-            if [ -n "$cand" ] && [ -x "$cand" ]; then
-                DLLTOOL_PATH="$cand"; break
-            fi
-        done
-        # Fall back to LLVM dlltool (or anything else in PATH)
+        # Prefer real GNU dlltool from system package or OBS download
+        if [ -n "$REAL_DLLTOOL" ] && [ -x "$REAL_DLLTOOL" ]; then
+            DLLTOOL_PATH="$REAL_DLLTOOL"
+        fi
+        # Fall back: check GNUBIN_DIR
+        if [ -z "$DLLTOOL_PATH" ]; then
+            for cand in \
+                "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" \
+                "$GNUBIN_DIR/bin/dlltool"; do
+                if [ -n "$cand" ] && [ -x "$cand" ]; then
+                    DLLTOOL_PATH="$cand"; break
+                fi
+            done
+        fi
+        # Last resort: LLVM dlltool (or anything else in PATH)
         if [ -z "$DLLTOOL_PATH" ]; then
             for cand in \
                 "$MINGW_BIN/x86_64-w64-mingw32-dlltool" \
