@@ -1,6 +1,83 @@
 #!/bin/bash
 set -euo pipefail
 
+# ── OBS V2 签名辅助函数 ──────────────────────────────────────────────
+# 为 curl 请求生成 OBS V2 (HMAC-SHA1) 签名头。
+# 用法:
+#   obs_curl_download <url> [curl-extra-args...]
+#   obs_curl_to_file  <url> <output-file>
+#   obs_curl_pipe     <url>                  (输出到 stdout，可管道到 tar)
+#
+# 需要环境变量 OBS_AK_XUANWU_RUST / OBS_SK_XUANWU_RUST。
+# 如果凭证不存在，回退到匿名下载（兼容公共读对象）。
+# ──────────────────────────────────────────────────────────────────────
+
+# 从 OBS URL 中提取 bucket 和 object key
+# 支持虚拟主机风格: https://{bucket}.obs.{region}.myhuaweicloud.com/{key}
+_obs_extract_bucket_key() {
+    local url="$1"
+    # 去掉 scheme
+    local hostpath="${url#https://}"
+    hostpath="${hostpath#http://}"
+    local host="${hostpath%%/*}"
+    local path="${hostpath#*/}"
+    # 虚拟主机风格: bucket.obs.cn-north-4.myhuaweicloud.com
+    if [[ "$host" == *.obs.*.myhuaweicloud.com ]]; then
+        OBS_BUCKET="${host%%.*}"
+        OBS_OBJECT_KEY="$path"
+        return 0
+    fi
+    return 1
+}
+
+# 生成 OBS V2 签名头并执行 curl
+# $1 = URL, 其余参数传给 curl
+_obs_signed_curl() {
+    local url="$1"; shift
+    local ak="${OBS_AK_XUANWU_RUST:-}"
+    local sk="${OBS_SK_XUANWU_RUST:-}"
+
+    # 无凭证时回退到匿名下载
+    if [[ -z "$ak" ]] || [[ -z "$sk" ]]; then
+        curl "$url" "$@"
+        return $?
+    fi
+
+    # 提取 bucket 和 key
+    local OBS_BUCKET="" OBS_OBJECT_KEY=""
+    if ! _obs_extract_bucket_key "$url"; then
+        # 非 OBS URL，直接匿名下载
+        curl "$url" "$@"
+        return $?
+    fi
+
+    local method="GET"
+    local date
+    date="$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S GMT')"
+    local string_to_sign
+    string_to_sign="$(printf '%s\n\n\n%s\n/%s/%s' "$method" "$date" "$OBS_BUCKET" "$OBS_OBJECT_KEY")"
+    local signature
+    signature="$(printf '%s' "$string_to_sign" | openssl dgst -sha1 -hmac "$sk" -binary | openssl base64 -A)"
+    local host="${OBS_BUCKET}.obs.cn-north-4.myhuaweicloud.com"
+
+    curl -H "Date: $date" \
+         -H "Authorization: OBS ${ak}:${signature}" \
+         -H "Host: $host" \
+         "$url" "$@"
+}
+
+# 带签名下载到文件
+obs_curl_to_file() {
+    local url="$1" output="$2"; shift 2
+    _obs_signed_curl "$url" -sSL --connect-timeout 10 -o "$output" -w "%{http_code}" "$@"
+}
+
+# 带签名下载到 stdout（管道用）
+obs_curl_pipe() {
+    local url="$1"; shift
+    _obs_signed_curl "$url" -sSL --connect-timeout 10 --max-time 300 "$@"
+}
+
 usage() {
     echo "Usage: $0 --build-target <triple> --dist-targets <triple,...> [--skip-gui] [--binary-only]"
     echo "  --build-target   Target triple for compiling the installer binary"
@@ -96,7 +173,7 @@ if [[ "$BUILD_TARGET" == "aarch64-unknown-linux-gnu" ]]; then
             TOOLCHAIN_URL="${AARCH64_TOOLCHAIN_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu.tar.xz}"
             mkdir -p "$TOOLCHAIN_DIR"
 
-            if curl -sSL --connect-timeout 10 --max-time 300 "$TOOLCHAIN_URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
+            if obs_curl_pipe "$TOOLCHAIN_URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
                 export PATH="$TOOLCHAIN_DIR/bin:$PATH"
                 # ARM toolchain uses aarch64-none-linux-gnu- prefix, create symlinks
                 ln -sf "$TOOLCHAIN_DIR/bin/aarch64-none-linux-gnu-gcc" "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc"
@@ -135,9 +212,9 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         TOOLCHAIN_URL2="${MINGW_TOOLCHAIN_URL2:-https://mirrors.huaweicloud.com/mingw-w64/mingw-w64-cross.tar.xz}"
         mkdir -p "$TOOLCHAIN_DIR"
 
-        if curl -sSL --connect-timeout 10 --max-time 300 "$TOOLCHAIN_URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
+        if obs_curl_pipe "$TOOLCHAIN_URL" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
             echo "  Installed from primary URL"
-        elif curl -sSL --connect-timeout 10 --max-time 300 "$TOOLCHAIN_URL2" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
+        elif obs_curl_pipe "$TOOLCHAIN_URL2" | tar -xJ --strip-components=1 -C "$TOOLCHAIN_DIR"; then
             echo "  Installed from fallback URL"
         else
             echo "ERROR: failed to download mingw cross-compiler from all sources"
@@ -175,7 +252,7 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
             echo "  Downloading GNU binutils for dlltool..."
             mkdir -p "$GNUBIN_DIR"
             GNUBIN_TGZ="$HOME/gnu-binutils.tar.gz"
-            _http_code=$(curl -sSL --connect-timeout 10 --max-time 120 -o "$GNUBIN_TGZ" -w "%{http_code}" "$GNUBIN_URL" || echo "000")
+            _http_code=$(obs_curl_to_file "$GNUBIN_URL" "$GNUBIN_TGZ" --max-time 120 || echo "000")
             _fsize=$(stat -c%s "$GNUBIN_TGZ" 2>/dev/null || wc -c < "$GNUBIN_TGZ")
             echo "  Downloaded $_fsize bytes (HTTP $_http_code)"
             if [ "$_http_code" != "200" ]; then

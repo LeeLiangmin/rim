@@ -205,6 +205,36 @@ mod tests {
     }
 
     #[test]
+    fn test_find_obs_credential_with_env() {
+        // This test verifies that when OBS_AK_XUANWU_RUST / OBS_SK_XUANWU_RUST
+        // are set at build time, find_obs_credential returns credentials for
+        // matching URLs.
+        let config = BuildConfig::load();
+        let url: url::Url = "https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/toolset/test.7z"
+            .parse()
+            .unwrap();
+        let cred = config.find_obs_credential(&url);
+
+        // If OBS_AK_XUANWU_RUST was set at build time, we should get credentials
+        if !config.obs_credentials.get("xuanwu_rust")
+            .map_or(true, |c| c.encrypted_ak.is_empty())
+        {
+            let cred = cred.expect("should find credential for xuanwu-rust URL");
+            assert!(!cred.access_key.is_empty(), "AK should not be empty");
+            assert!(!cred.secret_key.is_empty(), "SK should not be empty");
+            println!("  xuanwu_rust AK (first 4): {}****", &cred.access_key[..4]);
+        } else {
+            // No env vars at build time — credential should be None
+            assert!(cred.is_none(), "should be None when no env vars set");
+            println!("  (no OBS credentials embedded at build time, skipping)");
+        }
+
+        // Non-OBS URL should never match
+        let non_obs_url: url::Url = "https://example.com/file.tar.gz".parse().unwrap();
+        assert!(config.find_obs_credential(&non_obs_url).is_none());
+    }
+
+    #[test]
     fn test_xor_roundtrip() {
         let original = "test-access-key-12345";
         // Simulate encryption (same logic as build.rs)
