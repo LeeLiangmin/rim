@@ -123,35 +123,6 @@ cargo run -p rim_dev -- vendor --for "$DIST_TARGETS"
 
 # Set CC/linker for Windows mingw cross-compilation
 if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
-    # ── Extract GCC mingw (real GNU binutils dlltool) from vendor packages ──
-    # The vendor step above downloaded the niXman/winlibs GCC mingw 7z to
-    # resources/packages/<edition>/<target>/tools/. Its GNU dlltool (unlike
-    # llvm-dlltool from the mingw-w64-cross tarball) correctly generates import
-    # libraries for all system DLLs, including kernel32 and bcryptprimitives.
-    GCC_MINGW_DIR="$HOME/gcc-mingw"
-    VENDOR_PKG_DIR="resources/packages/${EDITION:-community}/$BUILD_TARGET/tools"
-    if [[ ! -d "$GCC_MINGW_DIR/bin" ]]; then
-        MINGW_7Z=$(find "$VENDOR_PKG_DIR" -maxdepth 1 -name "x86_64-*.7z" 2>/dev/null | head -1)
-        if [[ -n "$MINGW_7Z" ]] && [[ -f "$MINGW_7Z" ]]; then
-            echo "  Extracting GCC mingw from vendor packages: $MINGW_7Z"
-            mkdir -p "$GCC_MINGW_DIR"
-            if 7z x -y -o"$GCC_MINGW_DIR" "$MINGW_7Z" >/dev/null 2>&1; then
-                echo "  Extraction OK"
-            else
-                echo "  WARNING: 7z extraction failed, will fall back to LLVM dlltool"
-                rm -rf "$GCC_MINGW_DIR"
-            fi
-            # 7z may nest the content inside a subdirectory (e.g. mingw64/)
-            if [[ ! -d "$GCC_MINGW_DIR/bin" ]]; then
-                NESTED=$(find "$GCC_MINGW_DIR" -maxdepth 1 -type d ! -name '.' 2>/dev/null | head -1)
-                if [[ -n "$NESTED" ]] && [[ -d "$NESTED/bin" ]]; then
-                    mv "$NESTED"/* "$GCC_MINGW_DIR/" 2>/dev/null || true
-                    rmdir "$NESTED" 2>/dev/null || true
-                fi
-            fi
-        fi
-    fi
-
     # ── LLVM mingw toolchain (provides linker and other tools) ──
     if [[ -d "$HOME/mingw-toolchain/bin" ]]; then
         export PATH="$HOME/mingw-toolchain/bin:$PATH"
@@ -178,11 +149,27 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         echo "  Installed mingw toolchain to $TOOLCHAIN_DIR"
     fi
 
-    # Put GCC mingw bin FIRST in PATH so GNU dlltool can find its sibling `as`.
-    # Must be after LLVM toolchain setup so it takes precedence.
-    if [[ -d "$GCC_MINGW_DIR/bin" ]]; then
-        export PATH="$GCC_MINGW_DIR/bin:$PATH"
-        echo "  GCC mingw bin in PATH: $GCC_MINGW_DIR/bin"
+    # ── GNU binutils (provides real GNU dlltool for raw-dylib import libs) ──
+    # llvm-dlltool (bundled with the mingw toolchain above) cannot generate
+    # import libraries for kernel32 and other system DLLs. The real GNU
+    # dlltool can. Downloaded from OBS as a pre-built tarball.
+    GNUBIN_URL="${GNUBIN_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/mingw-binutils-x86_64-2.42.tar.gz}"
+    GNUBIN_DIR="$HOME/gnu-binutils"
+    if [[ ! -x "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" ]]; then
+        echo "  Downloading GNU binutils for dlltool..."
+        mkdir -p "$GNUBIN_DIR"
+        if curl -sSL --connect-timeout 10 --max-time 120 "$GNUBIN_URL" | tar -xz --strip-components=1 -C "$GNUBIN_DIR"; then
+            echo "  GNU binutils installed to $GNUBIN_DIR"
+        else
+            echo "  WARNING: GNU binutils download failed; will try llvm-dlltool as fallback"
+            rm -rf "$GNUBIN_DIR"
+        fi
+    fi
+
+    # Put GNU binutils FIRST in PATH so its dlltool and `as` are found
+    if [[ -d "$GNUBIN_DIR/bin" ]]; then
+        export PATH="$GNUBIN_DIR/bin:$PATH"
+        echo "  GNU binutils in PATH: $GNUBIN_DIR/bin"
     fi
 
     if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
@@ -191,15 +178,15 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
         # rustc on windows-gnu generates raw-dylib import libs by invoking a
-        # dlltool binary at link time. Prefer the real GNU dlltool from the GCC
-        # mingw package (extracted above) — it can handle all system DLLs
-        # (kernel32, bcryptprimitives, etc.) that llvm-dlltool silently fails on.
+        # dlltool binary at link time. Prefer the real GNU dlltool (downloaded
+        # above) — it can handle all system DLLs (kernel32, bcryptprimitives,
+        # etc.) that llvm-dlltool silently fails on.
         MINGW_BIN="$(dirname "$(command -v x86_64-w64-mingw32-gcc)")"
         DLLTOOL_PATH=""
-        # Prefer GNU dlltool from GCC mingw
+        # Prefer GNU dlltool
         for cand in \
-            "$GCC_MINGW_DIR/bin/x86_64-w64-mingw32-dlltool" \
-            "$GCC_MINGW_DIR/bin/dlltool"; do
+            "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" \
+            "$GNUBIN_DIR/bin/dlltool"; do
             if [ -n "$cand" ] && [ -x "$cand" ]; then
                 DLLTOOL_PATH="$cand"; break
             fi
