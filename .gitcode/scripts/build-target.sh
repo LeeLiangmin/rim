@@ -158,10 +158,18 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
     if [[ ! -x "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" ]]; then
         echo "  Downloading GNU binutils for dlltool..."
         mkdir -p "$GNUBIN_DIR"
-        if curl -sSL --connect-timeout 10 --max-time 120 "$GNUBIN_URL" | tar -xz --strip-components=1 -C "$GNUBIN_DIR"; then
-            echo "  GNU binutils installed to $GNUBIN_DIR"
+        GNUBIN_TGZ="$HOME/gnu-binutils.tar.gz"
+        if curl -sSL --connect-timeout 10 --max-time 120 -o "$GNUBIN_TGZ" "$GNUBIN_URL"; then
+            echo "  Downloaded $(stat -c%s "$GNUBIN_TGZ" 2>/dev/null || wc -c < "$GNUBIN_TGZ") bytes"
+            if tar -xf "$GNUBIN_TGZ" --strip-components=1 -C "$GNUBIN_DIR" 2>&1; then
+                echo "  GNU binutils installed to $GNUBIN_DIR"
+            else
+                echo "  WARNING: tar extraction failed; will try llvm-dlltool as fallback"
+                rm -rf "$GNUBIN_DIR"
+            fi
+            rm -f "$GNUBIN_TGZ"
         else
-            echo "  WARNING: GNU binutils download failed; will try llvm-dlltool as fallback"
+            echo "  WARNING: GNU binutils download failed (curl exit $?); will try llvm-dlltool as fallback"
             rm -rf "$GNUBIN_DIR"
         fi
     fi
