@@ -226,6 +226,14 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         echo "  Installed mingw toolchain to $TOOLCHAIN_DIR"
     fi
 
+    # ── Helper: verify a dlltool binary can actually execute ──
+    # Checks both file existence and runtime compatibility (e.g. GLIBC version).
+    # Returns 0 if the binary runs successfully, 1 otherwise.
+    _can_run_dlltool() {
+        local bin="$1"
+        [ -n "$bin" ] && [ -x "$bin" ] && "$bin" --version >/dev/null 2>&1
+    }
+
     # ── GNU binutils (provides real GNU dlltool for raw-dylib import libs) ──
     # llvm-dlltool (bundled with the LLVM mingw toolchain above) cannot generate
     # import libraries for kernel32 and other system DLLs. The real GNU
@@ -236,7 +244,7 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
     REAL_DLLTOOL=""
     # ── Strategy 1: system package ──
     for cand in /usr/bin/x86_64-w64-mingw32-dlltool /usr/x86_64-w64-mingw32/bin/dlltool; do
-        if [ -x "$cand" ]; then
+        if _can_run_dlltool "$cand"; then
             _gnu_ver="$("$cand" --version 2>&1 | head -1)"
             if echo "$_gnu_ver" | grep -qi 'GNU'; then
                 REAL_DLLTOOL="$cand"
@@ -269,10 +277,14 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
             fi
             rm -f "$GNUBIN_TGZ"
         fi
-        if [[ -x "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" ]]; then
+        if _can_run_dlltool "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool"; then
             REAL_DLLTOOL="$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool"
             export PATH="$GNUBIN_DIR/bin:$PATH"
             echo "  GNU binutils in PATH: $GNUBIN_DIR/bin"
+        elif [ -x "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" ]; then
+            echo "  WARNING: downloaded GNU dlltool exists but cannot run (likely GLIBC mismatch):"
+            echo "    $("$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" --version 2>&1 | head -3 | tr '\n' ' ')"
+            echo "  Will try other dlltool candidates as fallback"
         fi
     fi
 
@@ -288,7 +300,7 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         MINGW_BIN="$(dirname "$(command -v x86_64-w64-mingw32-gcc)")"
         DLLTOOL_PATH=""
         # Prefer real GNU dlltool from system package or OBS download
-        if [ -n "$REAL_DLLTOOL" ] && [ -x "$REAL_DLLTOOL" ]; then
+        if _can_run_dlltool "$REAL_DLLTOOL"; then
             DLLTOOL_PATH="$REAL_DLLTOOL"
         fi
         # Fall back: check GNUBIN_DIR
@@ -296,7 +308,7 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
             for cand in \
                 "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" \
                 "$GNUBIN_DIR/bin/dlltool"; do
-                if [ -n "$cand" ] && [ -x "$cand" ]; then
+                if _can_run_dlltool "$cand"; then
                     DLLTOOL_PATH="$cand"; break
                 fi
             done
@@ -308,7 +320,7 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
                 "$MINGW_BIN/dlltool" \
                 "$(command -v x86_64-w64-mingw32-dlltool 2>/dev/null)" \
                 "$(command -v llvm-dlltool 2>/dev/null)"; do
-                if [ -n "$cand" ] && [ -x "$cand" ]; then
+                if _can_run_dlltool "$cand"; then
                     DLLTOOL_PATH="$cand"; break
                 fi
             done
