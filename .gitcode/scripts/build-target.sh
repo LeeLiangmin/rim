@@ -294,26 +294,60 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
         # rustc on windows-gnu generates raw-dylib import libs by invoking a
-        # dlltool binary at link time. Prefer the real GNU dlltool (downloaded
-        # above) — it can handle all system DLLs (kernel32, bcryptprimitives,
-        # etc.) that llvm-dlltool silently fails on.
+        # dlltool binary at link time.  GNU dlltool needs a mingw-capable
+        # assembler (x86_64-w64-mingw32-as) — the system `as` only handles
+        # ELF and will fail with "cannot represent relocation type BFD_RELOC_RVA".
+        #
+        # Strategy: if we have a working GNU dlltool AND a mingw assembler
+        # in the same toolchain, create a wrapper that passes `-S <as>` so
+        # dlltool always uses the right assembler.  Otherwise fall back to
+        # the LLVM mingw toolchain's dlltool (which bundles its own assembler).
         MINGW_BIN="$(dirname "$(command -v x86_64-w64-mingw32-gcc)")"
         DLLTOOL_PATH=""
-        # Prefer real GNU dlltool from system package or OBS download
-        if _can_run_dlltool "$REAL_DLLTOOL"; then
-            DLLTOOL_PATH="$REAL_DLLTOOL"
+
+        # ── Helper: find a working mingw assembler ──
+        MINGW_AS=""
+        for cand in \
+            "$MINGW_BIN/x86_64-w64-mingw32-as" \
+            "$GNUBIN_DIR/bin/x86_64-w64-mingw32-as" \
+            "$(command -v x86_64-w64-mingw32-as 2>/dev/null)"; do
+            if [ -n "$cand" ] && [ -x "$cand" ]; then
+                MINGW_AS="$cand"; break
+            fi
+        done
+
+        # ── Helper: create a dlltool wrapper that passes -S <assembler> ──
+        _make_dlltool_wrapper() {
+            local real_dlltool="$1" mingw_as="$2"
+            local wrapper="/tmp/dlltool-wrapper"
+            cat > "$wrapper" <<WEOF
+#!/bin/sh
+exec "$real_dlltool" -S "$mingw_as" "\$@"
+WEOF
+            chmod +x "$wrapper"
+            echo "$wrapper"
+        }
+
+        # Prefer real GNU dlltool + mingw assembler (via wrapper)
+        if _can_run_dlltool "$REAL_DLLTOOL" && [ -n "$MINGW_AS" ]; then
+            DLLTOOL_PATH="$(_make_dlltool_wrapper "$REAL_DLLTOOL" "$MINGW_AS")"
+            echo "  Using GNU dlltool wrapper: $DLLTOOL_PATH"
+            echo "    dlltool=$REAL_DLLTOOL, as=$MINGW_AS"
         fi
-        # Fall back: check GNUBIN_DIR
-        if [ -z "$DLLTOOL_PATH" ]; then
+        # Fall back: check GNUBIN_DIR with mingw assembler
+        if [ -z "$DLLTOOL_PATH" ] && [ -n "$MINGW_AS" ]; then
             for cand in \
                 "$GNUBIN_DIR/bin/x86_64-w64-mingw32-dlltool" \
                 "$GNUBIN_DIR/bin/dlltool"; do
                 if _can_run_dlltool "$cand"; then
-                    DLLTOOL_PATH="$cand"; break
+                    DLLTOOL_PATH="$(_make_dlltool_wrapper "$cand" "$MINGW_AS")"
+                    echo "  Using GNU dlltool wrapper: $DLLTOOL_PATH"
+                    echo "    dlltool=$cand, as=$MINGW_AS"
+                    break
                 fi
             done
         fi
-        # Last resort: LLVM dlltool (or anything else in PATH)
+        # Fall back: LLVM mingw toolchain's dlltool (has its own assembler)
         if [ -z "$DLLTOOL_PATH" ]; then
             for cand in \
                 "$MINGW_BIN/x86_64-w64-mingw32-dlltool" \
