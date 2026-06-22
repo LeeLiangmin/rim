@@ -306,6 +306,18 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
+        # rustc on windows-gnu generates raw-dylib import libs by invoking a
+        # dlltool binary at link time.  GNU dlltool generates GNU-as-syntax
+        # assembly and needs a mingw-capable assembler (x86_64-w64-mingw32-as)
+        # via the -S flag — the system `as` only handles ELF and will fail with
+        # "cannot represent relocation type BFD_RELOC_RVA".
+        #
+        # The OBS mingw-binutils package contains both dlltool AND as (statically
+        # linked), so GNU dlltool + GNU as is the primary path.  LLVM as is
+        # incompatible with GNU dlltool's assembly syntax (not just --64).
+        MINGW_BIN="$(dirname "$(command -v x86_64-w64-mingw32-gcc)")"
+        DLLTOOL_PATH=""
+
         # LLVM-based mingw toolchains (clang-15) don't include libgcc/libgcc_eh.
         # rustc's windows-gnu target spec always passes -lgcc_eh -lgcc, which
         # are GCC runtime libs. LLVM uses libclang_rt.builtins instead, and
@@ -320,18 +332,6 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
             x86_64-w64-mingw32-ar rcs "$_MINGW_LIBDIR/libgcc_eh.a" 2>/dev/null || \
                 ar rcs "$_MINGW_LIBDIR/libgcc_eh.a"
         fi
-
-        # rustc on windows-gnu generates raw-dylib import libs by invoking a
-        # dlltool binary at link time.  GNU dlltool generates GNU-as-syntax
-        # assembly and needs a mingw-capable assembler (x86_64-w64-mingw32-as)
-        # via the -S flag — the system `as` only handles ELF and will fail with
-        # "cannot represent relocation type BFD_RELOC_RVA".
-        #
-        # The OBS mingw-binutils package contains both dlltool AND as (statically
-        # linked), so GNU dlltool + GNU as is the primary path.  LLVM as is
-        # incompatible with GNU dlltool's assembly syntax (not just --64).
-        MINGW_BIN="$(dirname "$(command -v x86_64-w64-mingw32-gcc)")"
-        DLLTOOL_PATH=""
 
         # ── Helper: check if a dlltool is LLVM (not GNU) ──
         _is_llvm_dlltool() {
