@@ -32,4 +32,4 @@ jobs:
       - name: Install deps
         run: cd repo_workspace && bash .gitcode/scripts/euleros-install-deps.sh --windows-cross
       - name: Build
-        run: cd repo_workspace && bash -c 'source .gitcode/.env && bash .gitcode/scripts/build-target.sh --build-target "$BUILD_TARGET_WINDOWS" --dist-targets "$DIST_TARGETS_WINDOWS" --skip-gui'
+        run: cd repo_workspace && bash -c 'source .gitcode/.env && bash .gitcode/scripts/build-target.sh --build-target "$BUILD_TARGET_WINDOWS" --dist-targets "$DIST_TARGETS_WINDOWS"'

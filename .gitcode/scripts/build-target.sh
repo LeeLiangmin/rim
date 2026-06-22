@@ -542,8 +542,17 @@ PYEOF
     fi
 fi
 
-echo "=== Building CLI installer ==="
-CMD="cargo run -p rim_dev -- dist --cli"
+# Determine dist mode:
+#   --cli:  CLI only (default)
+#   (none): Both mode (CLI + GUI, used for windows-gnu cross-compile)
+DIST_MODE="--cli"
+if ! $SKIP_GUI && [[ "$BUILD_TARGET" == *"windows"* ]]; then
+    DIST_MODE=""   # Both mode: builds CLI and GUI in one pass
+    echo "=== Building CLI + GUI installer (Both mode) ==="
+else
+    echo "=== Building CLI installer ==="
+fi
+CMD="cargo run -p rim_dev -- dist $DIST_MODE"
 if $BINARY_ONLY; then
     CMD="$CMD -b"
 fi
@@ -551,15 +560,18 @@ CMD="$CMD --target $BUILD_TARGET --for $DIST_TARGETS"
 echo "  Running: $CMD"
 $CMD
 
-# Build GUI inside Docker (linux targets only)
+# Build GUI: Linux targets use Docker; Windows targets already built
+# via Both mode above (cross-compilation works without webkit2gtk/Docker).
 if ! $SKIP_GUI; then
-    if ! command -v docker >/dev/null 2>&1; then
+    if [[ "$BUILD_TARGET" == *"windows"* ]]; then
+        # Already built in Both mode above, nothing extra needed.
+        :
+    elif ! command -v docker >/dev/null 2>&1; then
         echo "WARNING: docker not available, skipping GUI build"
     else
         echo "=== Building GUI via Docker ==="
         DIST_NAME=""
         case "$DIST_TARGETS" in
-            *windows*)      echo "WARNING: GUI build skipped for Windows target" ;;
             *aarch64*)      DIST_NAME="${DOCKER_IMAGE_AARCH64:-dist-aarch64-linux}" ;;
             *x86_64*)       DIST_NAME="${DOCKER_IMAGE_X86_64:-dist-x86-64-linux}" ;;
         esac
