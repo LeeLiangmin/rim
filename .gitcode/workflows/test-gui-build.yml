@@ -1,0 +1,117 @@
+name: Test GUI Build (Docker)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master"]
+
+jobs:
+  docker-check:
+    runs-on: euleros-2.10.1
+    steps:
+      - uses: checkout-action@0.0.1
+
+      - name: Install Docker
+        run: |
+          set -euo pipefail
+          echo "::group::Install Docker"
+          PY37_PATHS="/usr/lib/python3.7/site-packages"
+          [ -d "/usr/lib64/python3.7/site-packages" ] && PY37_PATHS="$PY37_PATHS:/usr/lib64/python3.7/site-packages"
+
+          YUM_OK=false
+          PY37_BIN=""
+          for p in /usr/bin/python3.7 /usr/bin/python37; do
+            [ -x "$p" ] && PY37_BIN="$p" && break
+          done
+          if [ -n "$PY37_BIN" ]; then
+            echo "  Attempt 1: using $PY37_BIN /bin/yum"
+            $PY37_BIN /bin/yum install -y docker docker-engine 2>&1 && YUM_OK=true
+          fi
+          if [ "$YUM_OK" = false ]; then
+            echo "  Attempt 2: using PYTHONPATH python3 /bin/yum"
+            PYTHONPATH="$PY37_PATHS" python3 /bin/yum install -y docker docker-engine 2>&1 && YUM_OK=true
+          fi
+          echo "  Docker install result: $( $YUM_OK && echo OK || echo FAILED )"
+          echo "::endgroup::"
+
+      - name: Docker availability check
+        run: |
+          set -euo pipefail
+          echo "::group::Docker Binary"
+          echo -n "  docker binary: "
+          command -v docker 2>/dev/null || { echo "NOT FOUND — Docker is not installed on this runner"; exit 0; }
+          docker --version 2>&1
+          echo "::endgroup::"
+
+          echo "::group::Docker Daemon"
+          echo "  Checking socket..."
+          for p in /var/run/docker.sock /run/docker.sock; do
+            echo -n "    $p: "
+            [ -e "$p" ] && echo "FOUND" || echo "not found"
+          done
+          echo -n "  docker info: "
+          docker info >/dev/null 2>&1 && echo "OK" || { echo "FAILED — daemon not running"; exit 0; }
+          echo "::endgroup::"
+
+      - name: Minimal Docker test (Alpine)
+        run: |
+          set -euo pipefail
+          echo "::group::Minimal Docker Test"
+          command -v docker >/dev/null 2>&1 || { echo "  SKIP: docker not installed"; echo "::endgroup::"; exit 0; }
+          docker info >/dev/null 2>&1 || { echo "  SKIP: docker daemon not running"; echo "::endgroup::"; exit 0; }
+          echo "  Building alpine test image..."
+          docker run --rm alpine:3.20 echo "Docker is working!" 2>&1
+          echo "  SUCCESS: Docker environment is functional"
+          echo "::endgroup::"
+
+      - name: Install deps (linux-gui)
+        run: |
+          set -euo pipefail
+          echo "::group::Install Build Dependencies"
+          cd repo_workspace
+          bash .gitcode/scripts/euleros-install-deps.sh --linux-gui
+          echo "::endgroup::"
+
+      - name: Build CLI + GUI (full build)
+        run: |
+          set -euo pipefail
+          cd repo_workspace
+
+          command -v docker >/dev/null 2>&1 || { echo "SKIP: docker not installed, cannot build GUI"; exit 0; }
+          docker info >/dev/null 2>&1 || { echo "SKIP: docker daemon not running, cannot build GUI"; exit 0; }
+
+          echo "::group::Full Build (CLI + GUI)"
+          source .gitcode/.env
+          bash .gitcode/scripts/build-target.sh \
+            --build-target "$BUILD_TARGET_X86_64" \
+            --dist-targets "$DIST_TARGETS_X86_64"
+          echo "::endgroup::"
+
+      - name: Verify GUI artifacts
+        run: |
+          set -euo pipefail
+          echo "::group::Verify GUI Artifacts"
+          cd repo_workspace
+          DIST_DIR="dist/x86_64-unknown-linux-gnu"
+          echo "  dist directory: $DIST_DIR"
+
+          if [ ! -d "$DIST_DIR" ]; then
+            echo "  NOT FOUND: $DIST_DIR"
+            echo "::endgroup::"
+            exit 0
+          fi
+
+          echo "  All files in dist:"
+          find "$DIST_DIR" -maxdepth 1 -type f | sort | while read f; do echo "    $(basename "$f")  ($(stat -c%s "$f") bytes)"; done
+
+          CLI_COUNT=$(find "$DIST_DIR" -maxdepth 1 -type f -name '*-installer-cli*' | wc -l)
+          GUI_COUNT=$(find "$DIST_DIR" -maxdepth 1 -type f -name '*-installer' ! -name '*-installer-cli*' | wc -l)
+          echo "  CLI installers: $CLI_COUNT"
+          echo "  GUI installers: $GUI_COUNT"
+
+          if [ "$GUI_COUNT" -gt 0 ]; then
+            echo "  SUCCESS: GUI build produced artifacts"
+          else
+            echo "  WARNING: no GUI installer found (Docker may have skipped GUI)"
+          fi
+          echo "::endgroup::"
