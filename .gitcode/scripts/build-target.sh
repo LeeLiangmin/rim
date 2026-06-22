@@ -234,6 +234,19 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         [ -n "$bin" ] && [ -x "$bin" ] && "$bin" --version >/dev/null 2>&1
     }
 
+    _can_run_as() {
+        local bin="$1"
+        [ -n "$bin" ] && [ -x "$bin" ] || return 1
+        echo '.text' | "$bin" --64 -o /dev/null 2>/dev/null
+    }
+
+    _is_llvm_as() {
+        case "$("$1" --version 2>&1)" in
+            *LLVM*|*clang*) return 0 ;;
+            *) return 1 ;;
+        esac
+    }
+
     # ── GNU binutils (provides real GNU dlltool for raw-dylib import libs) ──
     # llvm-dlltool (bundled with the LLVM mingw toolchain above) cannot generate
     # import libraries for kernel32 and other system DLLs. The real GNU
@@ -308,11 +321,15 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         # ── Helper: find a working mingw assembler ──
         MINGW_AS=""
         for cand in \
-            "$MINGW_BIN/x86_64-w64-mingw32-as" \
             "$GNUBIN_DIR/bin/x86_64-w64-mingw32-as" \
+            "$MINGW_BIN/x86_64-w64-mingw32-as" \
             "$(command -v x86_64-w64-mingw32-as 2>/dev/null)"; do
             if [ -n "$cand" ] && [ -x "$cand" ]; then
-                MINGW_AS="$cand"; break
+                if _can_run_as "$cand"; then
+                    MINGW_AS="$cand"; break
+                else
+                    echo "  WARNING: $cand exists but cannot assemble with --64"
+                fi
             fi
         done
 
@@ -327,6 +344,35 @@ WEOF
             chmod +x "$wrapper"
             echo "$wrapper"
         }
+
+        # ── Helper: create an as wrapper that filters out --64 (incompatible with LLVM as) ──
+        _make_as_wrapper() {
+            local real_as="$1"
+            local wrapper="/tmp/x86_64-w64-mingw32-as-wrapper"
+            cat > "$wrapper" <<WEOF
+#!/bin/sh
+args=()
+for a in "\$@"; do
+    [ "\$a" = "--64" ] && continue
+    args+=("\$a")
+done
+exec "$real_as" "\${args[@]}"
+WEOF
+            chmod +x "$wrapper"
+            echo "$wrapper"
+        }
+
+        # If the selected assembler is LLVM's clang-based as, it rejects
+        # the --64 flag that GNU dlltool passes. Wrap it to strip --64,
+        # which is redundant on x86_64 anyway.
+        if [ -n "$MINGW_AS" ] && _is_llvm_as "$MINGW_AS"; then
+            MINGW_AS="$(_make_as_wrapper "$MINGW_AS")"
+            echo "  WARNING: LLVM as detected; using --64 filter wrapper: $MINGW_AS"
+        fi
+
+        if [ -z "$MINGW_AS" ]; then
+            echo "  WARNING: no working mingw assembler found"
+        fi
 
         # Prefer real GNU dlltool + mingw assembler (via wrapper)
         if _can_run_dlltool "$REAL_DLLTOOL" && [ -n "$MINGW_AS" ]; then
