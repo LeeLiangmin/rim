@@ -287,6 +287,45 @@ jobs:
           fi
           echo "::endgroup::"
 
+          echo "::group::mingw libgcc diagnostics"
+          MINGW_LIBDIR="$MINGW_DIR/x86_64-w64-mingw32/lib"
+          if [ -d "$MINGW_LIBDIR" ]; then
+            echo "  lib dir: $MINGW_LIBDIR"
+            echo "  .a files present:"
+            ls -l "$MINGW_LIBDIR"/*.a 2>/dev/null | awk '{print "    " $5 "  " $9}' || echo "    (none)"
+            echo "  libgcc_eh.a check:"
+            if [ -f "$MINGW_LIBDIR/libgcc_eh.a" ]; then
+              SZ=$(stat -c%s "$MINGW_LIBDIR/libgcc_eh.a")
+              echo "    size: $SZ bytes"
+              if [ "$SZ" -gt 1024 ]; then
+                echo "    status: OK (>1KB, real archive)"
+                # Best-effort symbol check (llvm-nm preferred, GNU nm may not read COFF)
+                NM_BIN=""
+                for cand in x86_64-w64-mingw32-nm llvm-nm nm; do
+                  command -v "$cand" >/dev/null 2>&1 && NM_BIN="$cand" && break
+                done
+                if [ -n "$NM_BIN" ]; then
+                  if "$NM_BIN" "$MINGW_LIBDIR/libgcc_eh.a" 2>/dev/null | grep -qE ' T _?_Unwind_Resume$'; then
+                    echo "    _Unwind_Resume: FOUND"
+                  else
+                    echo "    _Unwind_Resume: NOT FOUND (nm may not support COFF; size check still passed)"
+                  fi
+                else
+                  echo "    _Unwind_Resume: nm not available (skipped)"
+                fi
+              else
+                echo "    status: BROKEN (<=1KB, likely empty stub)"
+              fi
+            else
+              echo "    status: MISSING — toolchain archive is stripped"
+              echo "    This will cause _Unwind_* undefined-symbol linker errors."
+              echo "    Run tools/prepare-libgcc.sh and upload mingw-libgcc-x86_64.tar.gz to OBS."
+            fi
+          else
+            echo "  lib dir $MINGW_LIBDIR does not exist (toolchain layout differs)"
+          fi
+          echo "::endgroup::"
+
           echo "::group::Smoke test: compile trivial Rust crate for windows-gnu"
           export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
           export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc

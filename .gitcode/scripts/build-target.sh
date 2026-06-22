@@ -318,20 +318,68 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         MINGW_BIN="$(dirname "$(command -v x86_64-w64-mingw32-gcc)")"
         DLLTOOL_PATH=""
 
-        # LLVM-based mingw toolchains (clang-15) don't include libgcc/libgcc_eh.
-        # rustc's windows-gnu target spec always passes -lgcc_eh -lgcc, which
-        # are GCC runtime libs. LLVM uses libclang_rt.builtins instead, and
-        # rustc's stdlib already bundles libunwind, so these libs are unneeded.
-        # Create empty stubs to satisfy the linker.
+        # ── Provide real libgcc_eh.a / libgcc.a for the windows-gnu target ──
+        # Rust's x86_64-pc-windows-gnu target spec hardcodes -lgcc_eh -lgcc.
+        # These archives supply _Unwind_Resume, _Unwind_RaiseException,
+        # _GCC_specific_handler, etc., which are referenced by libpanic_unwind,
+        # libstd's personality routine, and user crates (e.g. sevenz_rust).
+        #
+        # The OBS mingw-w64-cross.tar.xz is a stripped llvm-mingw that omits
+        # these archives. Empty stubs (as previously created here) cause
+        # undefined-symbol linker errors. Resolve in order:
+        #   1. Real libgcc_eh.a already present (>1KB) → use as-is
+        #   2. libunwind.a present → copy to libgcc_eh.a / libgcc.a
+        #   3. Download mingw-libgcc-x86_64.tar.gz from OBS and extract
+        #   4. Fail hard — never produce empty stubs.
         _MINGW_LIBDIR="$MINGW_BIN/../x86_64-w64-mingw32/lib"
-        if [ ! -f "$_MINGW_LIBDIR/libgcc.a" ]; then
-            echo "  Creating empty libgcc.a / libgcc_eh.a stubs (LLVM toolchain lacks them)"
+        _MINGW_ROOT="$MINGW_BIN/.."
+        _libgcc_eh_ok() {
+            [ -f "$_MINGW_LIBDIR/libgcc_eh.a" ] && \
+                [ "$(stat -c%s "$_MINGW_LIBDIR/libgcc_eh.a" 2>/dev/null || echo 0)" -gt 1024 ]
+        }
+
+        if _libgcc_eh_ok; then
+            echo "  libgcc_eh.a already present ($(stat -c%s "$_MINGW_LIBDIR/libgcc_eh.a") bytes)"
+        elif [ -f "$_MINGW_LIBDIR/libunwind.a" ] && \
+             [ "$(stat -c%s "$_MINGW_LIBDIR/libunwind.a" 2>/dev/null || echo 0)" -gt 1024 ]; then
+            echo "  libgcc_eh.a missing — copying from libunwind.a"
             mkdir -p "$_MINGW_LIBDIR"
-            x86_64-w64-mingw32-ar rcs "$_MINGW_LIBDIR/libgcc.a" 2>/dev/null || \
-                ar rcs "$_MINGW_LIBDIR/libgcc.a"
-            x86_64-w64-mingw32-ar rcs "$_MINGW_LIBDIR/libgcc_eh.a" 2>/dev/null || \
-                ar rcs "$_MINGW_LIBDIR/libgcc_eh.a"
+            cp "$_MINGW_LIBDIR/libunwind.a" "$_MINGW_LIBDIR/libgcc_eh.a"
+            [ -f "$_MINGW_LIBDIR/libgcc.a" ] || \
+                cp "$_MINGW_LIBDIR/libunwind.a" "$_MINGW_LIBDIR/libgcc.a"
+        else
+            echo "  libgcc_eh.a missing — downloading from OBS..."
+            _LIBGCC_URL="${LIBGCC_URL:-https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/mingw-libgcc-x86_64.tar.gz}"
+            _LIBGCC_TGZ="$HOME/mingw-libgcc-x86_64.tar.gz"
+            _http_code=$(obs_curl_to_file "$_LIBGCC_URL" "$_LIBGCC_TGZ" --max-time 120 || echo "000")
+            _fsize=$(stat -c%s "$_LIBGCC_TGZ" 2>/dev/null || wc -c < "$_LIBGCC_TGZ")
+            echo "  Downloaded $_fsize bytes (HTTP $_http_code)"
+            if [ "$_http_code" != "200" ] || [ "$_fsize" -lt 1024 ]; then
+                rm -f "$_LIBGCC_TGZ"
+                echo "ERROR: failed to download libgcc archives from OBS"
+                echo "  URL: $_LIBGCC_URL"
+                echo "  HTTP: $_http_code, size: $_fsize bytes"
+                echo "  Run tools/prepare-libgcc.sh locally and upload the result to OBS."
+                exit 1
+            fi
+            if ! tar -xzf "$_LIBGCC_TGZ" -C "$_MINGW_ROOT" 2>&1; then
+                rm -f "$_LIBGCC_TGZ"
+                echo "ERROR: failed to extract mingw-libgcc-x86_64.tar.gz"
+                exit 1
+            fi
+            rm -f "$_LIBGCC_TGZ"
+            echo "  Extracted libgcc archives to $_MINGW_LIBDIR"
         fi
+
+        # Final verification — refuse to continue with a broken archive.
+        if ! _libgcc_eh_ok; then
+            echo "ERROR: libgcc_eh.a is missing or too small after resolution attempts"
+            echo "  Path: $_MINGW_LIBDIR/libgcc_eh.a"
+            echo "  This will cause _Unwind_* undefined-symbol linker errors."
+            echo "  Run tools/prepare-libgcc.sh locally and upload mingw-libgcc-x86_64.tar.gz to OBS."
+            exit 1
+        fi
+        echo "  Verified: libgcc_eh.a ($(stat -c%s "$_MINGW_LIBDIR/libgcc_eh.a") bytes)"
 
         # ── Helper: check if a dlltool is LLVM (not GNU) ──
         _is_llvm_dlltool() {
