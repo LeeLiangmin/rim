@@ -1,4 +1,3 @@
-use env::consts::EXE_SUFFIX;
 use rim_common::build_config;
 use rim_common::utils::{copy_as, copy_file, ensure_dir};
 use std::path::{Path, PathBuf};
@@ -9,6 +8,19 @@ use anyhow::{bail, Context, Result};
 
 use crate::common::*;
 use crate::toolkits_parser::{ReleaseMode, Toolkit, Toolkits, PACKAGE_DIR};
+
+/// Returns the executable suffix for a target triple.
+///
+/// `std::env::consts::EXE_SUFFIX` reflects the *host* platform, which is wrong
+/// when cross-compiling (e.g. building windows binaries from linux). Windows
+/// targets always produce `.exe` files regardless of the host.
+fn target_exe_suffix(target: &str) -> &'static str {
+    if target.contains("windows") {
+        ".exe"
+    } else {
+        ""
+    }
+}
 
 pub const DIST_HELP: &str = r#"
 Generate release binaries
@@ -78,10 +90,11 @@ impl<'a> DistWorker<'a> {
 
     /// The compiled binary name
     fn source_binary_name(&self) -> String {
+        let suffix = target_exe_suffix(self.build_target);
         if self.is_cli {
-            format!("rim-cli{EXE_SUFFIX}")
+            format!("rim-cli{suffix}")
         } else {
-            format!("rim-gui{EXE_SUFFIX}")
+            format!("rim-gui{suffix}")
         }
     }
 
@@ -101,8 +114,9 @@ impl<'a> DistWorker<'a> {
     ///
     /// `simple` - the simple version of binary name, just `installer`.
     fn dest_binary_name(&self, simple: bool, is_cli: bool) -> String {
+        let suffix = target_exe_suffix(self.build_target);
         format!(
-            "{}installer{}{EXE_SUFFIX}",
+            "{}installer{}{suffix}",
             (!simple)
                 .then_some(format!("{}-", self.release_name()))
                 .unwrap_or_default(),
@@ -175,9 +189,9 @@ impl<'a> DistWorker<'a> {
                         // Last resort: check if the source binary exists in release directory
                         // and copy it directly (this handles the case where net installer wasn't built)
                         let alt_source_bin_name = if !self.is_cli {
-                            format!("rim-cli{EXE_SUFFIX}")
+                            format!("rim-cli{}", target_exe_suffix(self.build_target))
                         } else {
-                            format!("rim-gui{EXE_SUFFIX}")
+                            format!("rim-gui{}", target_exe_suffix(self.build_target))
                         };
                         let alt_source_bin = release_dir(self.build_target).join(&alt_source_bin_name);
                         if alt_source_bin.is_file() {
