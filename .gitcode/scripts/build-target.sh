@@ -319,10 +319,12 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         DLLTOOL_PATH=""
 
         # ── Helper: find a working mingw assembler ──
+        # Phase 1: prefer an as that natively supports --64 (GNU as).
+        # Phase 2: fall back to ANY mingw as (e.g. LLVM as) even if it
+        #          rejects --64 — the LLVM-as wrapper below will strip it.
         MINGW_AS=""
         for cand in \
             "$GNUBIN_DIR/bin/x86_64-w64-mingw32-as" \
-            "$MINGW_BIN/x86_64-w64-mingw32-as" \
             "$(command -v x86_64-w64-mingw32-as 2>/dev/null)"; do
             if [ -n "$cand" ] && [ -x "$cand" ]; then
                 if _can_run_as "$cand"; then
@@ -332,6 +334,17 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
                 fi
             fi
         done
+        if [ -z "$MINGW_AS" ]; then
+            for cand in \
+                "$MINGW_BIN/x86_64-w64-mingw32-as" \
+                "$(command -v x86_64-w64-mingw32-as 2>/dev/null)"; do
+                if [ -n "$cand" ] && [ -x "$cand" ]; then
+                    MINGW_AS="$cand"
+                    echo "  Falling back to $cand (will apply --64 filter if needed)"
+                    break
+                fi
+            done
+        fi
 
         # ── Helper: create a dlltool wrapper that passes -S <assembler> ──
         _make_dlltool_wrapper() {
