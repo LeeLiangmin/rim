@@ -306,6 +306,21 @@ if [[ "$BUILD_TARGET" == *"windows-gnu"* ]]; then
         export CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
         export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
+        # LLVM-based mingw toolchains (clang-15) don't include libgcc/libgcc_eh.
+        # rustc's windows-gnu target spec always passes -lgcc_eh -lgcc, which
+        # are GCC runtime libs. LLVM uses libclang_rt.builtins instead, and
+        # rustc's stdlib already bundles libunwind, so these libs are unneeded.
+        # Create empty stubs to satisfy the linker.
+        _MINGW_LIBDIR="$MINGW_BIN/../x86_64-w64-mingw32/lib"
+        if [ ! -f "$_MINGW_LIBDIR/libgcc.a" ]; then
+            echo "  Creating empty libgcc.a / libgcc_eh.a stubs (LLVM toolchain lacks them)"
+            mkdir -p "$_MINGW_LIBDIR"
+            x86_64-w64-mingw32-ar rcs "$_MINGW_LIBDIR/libgcc.a" 2>/dev/null || \
+                ar rcs "$_MINGW_LIBDIR/libgcc.a"
+            x86_64-w64-mingw32-ar rcs "$_MINGW_LIBDIR/libgcc_eh.a" 2>/dev/null || \
+                ar rcs "$_MINGW_LIBDIR/libgcc_eh.a"
+        fi
+
         # rustc on windows-gnu generates raw-dylib import libs by invoking a
         # dlltool binary at link time.  GNU dlltool generates GNU-as-syntax
         # assembly and needs a mingw-capable assembler (x86_64-w64-mingw32-as)
