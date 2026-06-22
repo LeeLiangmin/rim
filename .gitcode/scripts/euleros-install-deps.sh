@@ -146,8 +146,8 @@ index = "https://mirror.xuanwu.openatom.cn/crates.io-index"
 [target.x86_64-pc-windows-gnu]
 linker = "x86_64-w64-mingw32-gcc"
 ar = "x86_64-w64-mingw32-ar"
-# build-target.sh INSERTS "-C dlltool=<path>" pointing to LLVM dlltool
-# (preferred, has internal assembler) or GNU dlltool (fallback).
+# build-target.sh INSERTS "-C dlltool=<path>" pointing to GNU dlltool
+# (from OBS mingw-binutils package, includes both dlltool + as, statically linked).
 # getrandom legacy backends are kept as a belt-and-suspenders safety net.
 rustflags = [
   "--cfg", "getrandom_windows_legacy",
