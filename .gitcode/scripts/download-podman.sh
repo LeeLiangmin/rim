@@ -81,22 +81,13 @@ fi
 
 # --- Download conmon (required by podman) ---
 if ! command -v conmon >/dev/null 2>&1; then
-  CONMON_TGZ="/tmp/conmon.tgz"
-  if obs_dl "dist/conmon-amd64-v2.1.12.tgz" "$CONMON_TGZ" "conmon"; then
-    tar xzf "$CONMON_TGZ" -C "$DEST_DIR"
+  if obs_dl "dist/conmon.amd64" "$DEST_DIR/conmon" "conmon"; then
+    chmod +x "$DEST_DIR/conmon"
   else
-    echo "=== Trying conmon from GitHub ==="
-    CONMON_URL="https://github.com/containers/conmon/releases/download/v2.1.12/conmon.amd64"
-    if curl -fsSL --connect-timeout 10 --max-time 60 -o "$DEST_DIR/conmon" "$CONMON_URL" 2>&1; then
-      chmod +x "$DEST_DIR/conmon"
-      echo "  conmon OK (GitHub)"
-    else
-      echo "ERROR: conmon not available"
-      exit 1
-    fi
+    echo "ERROR: conmon not available"
+    exit 1
   fi
-  chmod +x "$DEST_DIR/conmon" 2>/dev/null || true
-  echo "conmon $(command -v conmon)"
+  echo "conmon ready"
 fi
 
 export PATH="$DEST_DIR:$DEST_DIR/usr/local/bin:$PATH"
