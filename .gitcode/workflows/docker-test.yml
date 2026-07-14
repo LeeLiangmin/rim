@@ -47,7 +47,7 @@ jobs:
           echo "  sha256: $(sha256sum /tmp/hope.exe | cut -d' ' -f1)"
 
           echo "=== Sign hope.exe ==="
-          bash repo_workspace/.gitcode/scripts/sign-pe-originsign.sh /tmp/hope.exe /tmp/hope-signed.exe 2>&1
+          bash .gitcode/scripts/sign-pe-originsign.sh /tmp/hope.exe /tmp/hope-signed.exe 2>&1
 
           echo "=== Verify signed file ==="
           if [ -f /tmp/hope-signed.exe ]; then
