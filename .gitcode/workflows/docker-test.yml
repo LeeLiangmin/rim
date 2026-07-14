@@ -25,10 +25,17 @@ jobs:
 
           echo "=== Initializing KMS ==="
           originsign import --kms local
-          originsign keygen --algo rsa 2>&1 || true
+          originsign keygen --algo rsa
+          originsign keygen --algo ecdsa
+          originsign keygen --algo sm2 --sign-tool go-tongsuo
+
+          echo "=== Importing keys ==="
+          originsign import --kms local --algo rsa --priv rsa-priv-key.pem --pub rsa-pub-key.pem
+          originsign import --kms local --algo ecdsa --priv ec-priv-key.pem --pub ec-pub-key.pem
+          originsign import --kms local --algo sm2 --priv sm2-priv-key.pem --pub sm2-pub-key.pem
           originsign import --kms local --list
 
-          echo "=== Starting server (background) ==="
+          echo "=== Starting server ==="
           originsign server &
           sleep 3
 
