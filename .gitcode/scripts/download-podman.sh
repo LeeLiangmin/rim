@@ -15,21 +15,33 @@ fi
 if [ -n "${OBS_AK_XUANWU_RUST:-}" ] && [ -n "${OBS_SK_XUANWU_RUST:-}" ]; then
   echo "=== Generating signed OBS URL ==="
   SIGNED_URL=$(python3 -c "
-import hashlib, hmac, datetime, urllib.parse, base64, os
+import hashlib, hmac, datetime, urllib.parse, os
 
 ak = os.environ['OBS_AK_XUANWU_RUST']
 sk = os.environ['OBS_SK_XUANWU_RUST']
 bucket = 'xuanwu-rust'
 region = 'cn-north-4'
 obj = 'dist/podman-linux-amd64.tar.gz'
+expires = '3600'
 
 t = datetime.datetime.utcnow()
 ds = t.strftime('%Y%m%d')
 amz_date = t.strftime('%Y%m%dT%H%M%SZ')
 cred = ak + '/' + ds + '/' + region + '/s3/aws4_request'
+signed_headers = 'host'
 
-canon = 'GET\n/' + obj + '\n\nhost:' + bucket + '.obs.' + region + '.myhuaweicloud.com\n\nhost\nUNSIGNED-PAYLOAD'
-sts = 'AWS4-HMAC-SHA256\n' + amz_date + '\n' + ds + '/' + region + '/s3/aws4_request\n' + hashlib.sha256(canon.encode()).hexdigest()
+# Build query string (must be in canonical request for presigned URL)
+q_algorithm = 'X-Amz-Algorithm=AWS4-HMAC-SHA256'
+q_cred = 'X-Amz-Credential=' + urllib.parse.quote(cred, safe='')
+q_date = 'X-Amz-Date=' + amz_date
+q_expires = 'X-Amz-Expires=' + expires
+q_headers = 'X-Amz-SignedHeaders=' + signed_headers
+canon_qs = q_algorithm + '&' + q_cred + '&' + q_date + '&' + q_expires + '&' + q_headers
+
+canon_req = 'GET\n/' + obj + '\n' + canon_qs + '\nhost:' + bucket + '.obs.' + region + '.myhuaweicloud.com\n\n' + signed_headers + '\nUNSIGNED-PAYLOAD'
+
+scope = ds + '/' + region + '/s3/aws4_request'
+sts = 'AWS4-HMAC-SHA256\n' + amz_date + '\n' + scope + '\n' + hashlib.sha256(canon_req.encode()).hexdigest()
 
 def sign(k, m):
     return hmac.new(k, m.encode(), hashlib.sha256).digest()
@@ -39,11 +51,7 @@ k = sign(sign(sign(sign(skb, ds), region), 's3'), 'aws4_request')
 sig = hmac.new(k, sts.encode(), hashlib.sha256).hexdigest()
 
 url = 'https://' + bucket + '.obs.' + region + '.myhuaweicloud.com/' + obj
-url += '?X-Amz-Algorithm=AWS4-HMAC-SHA256'
-url += '&X-Amz-Credential=' + urllib.parse.quote(cred)
-url += '&X-Amz-Date=' + amz_date
-url += '&X-Amz-Expires=3600'
-url += '&X-Amz-SignedHeaders=host'
+url += '?' + q_algorithm + '&' + q_cred + '&' + q_date + '&' + q_expires + '&' + q_headers
 url += '&X-Amz-Signature=' + sig
 print(url)
 ")
