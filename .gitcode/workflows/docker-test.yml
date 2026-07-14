@@ -74,8 +74,6 @@ jobs:
 
           if command -v docker >/dev/null 2>&1; then
             echo "=== Docker available: $(docker --version) ==="
-            # Save path for subsequent steps
-            echo "/tmp/docker" >> "$GITHUB_PATH"
           else
             echo "=== ERROR: Docker not available after all attempts ==="
             exit 1
