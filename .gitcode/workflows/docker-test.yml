@@ -33,17 +33,28 @@ jobs:
           originsign import --kms local --algo rsa --priv rsa-priv-key.pem --pub rsa-pub-key.pem
           originsign import --kms local --algo ecdsa --priv ec-priv-key.pem --pub ec-pub-key.pem
           originsign import --kms local --algo sm2 --priv sm2-priv-key.pem --pub sm2-pub-key.pem
-          originsign import --kms local --list
+          KEY_ID=$(originsign import --kms local --list 2>&1 | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+          echo "Using key_id: $KEY_ID"
 
           echo "=== Starting server ==="
           originsign server &
+          SERVER_PID=$!
           sleep 3
 
-          echo "=== Testing sign API ==="
-          curl -s -X POST http://localhost:8081/v1/sign/digest \
+          echo "=== Sign test digest ==="
+          SIGN_RESP=$(curl -s -X POST http://localhost:8081/v1/sign/digest \
             -H "Content-Type: application/json" \
-            -d '{"base_config":{"algo":"rsa","kms":"local","flow":"sigstore","sys":"pki"},"digest":"Hello GitCode CI","key_id":"test"}' || true
+            -d "{\"base_config\":{\"algo\":\"rsa\",\"kms\":\"local\",\"flow\":\"sigstore\",\"sys\":\"pki\"},\"digest\":\"Hello GitCode CI\",\"key_id\":\"$KEY_ID\"}")
+          echo "$SIGN_RESP"
+
+          echo "=== Verify signature ==="
+          SIGNATURE=$(echo "$SIGN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('signature',''))" 2>/dev/null || echo "")
+          if [ -n "$SIGNATURE" ]; then
+            curl -s -X POST http://localhost:8081/v1/verify/digest \
+              -H "Content-Type: application/json" \
+              -d "{\"base_config\":{\"algo\":\"rsa\",\"flow\":\"sigstore\",\"kms\":\"local\",\"sys\":\"pki\"},\"key_id\":\"$KEY_ID\",\"digest\":\"Hello GitCode CI\",\"signature\":\"$SIGNATURE\"}"
+          fi
 
           echo "=== Cleanup ==="
-          pkill originsign || true
-          echo "=== Pipeline complete ==="
+          kill $SERVER_PID 2>/dev/null || true
+          echo "=== Originsign pipeline complete! ==="
