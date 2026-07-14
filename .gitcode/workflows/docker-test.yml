@@ -25,10 +25,11 @@ jobs:
           set -euo pipefail
           export PATH="/tmp/podman:/tmp/podman/usr/local/bin:$PATH"
           echo "=== Pulling originsign image ==="
-          podman pull forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
+          podman --storage-driver=vfs --cgroup-manager=cgroupfs pull \
+            forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
           echo "=== Running originsign server ==="
-          podman run -d --name originsign-server \
-            -p 81:8081 --privileged \
+          podman --storage-driver=vfs --cgroup-manager=cgroupfs run -d --name originsign-server \
+            -p 81:8081 \
             forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2 \
             originsign server
           echo "=== Test signing API ==="
