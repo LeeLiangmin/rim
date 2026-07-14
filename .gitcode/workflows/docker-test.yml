@@ -24,6 +24,8 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="/tmp/podman:/tmp/podman/usr/local/bin:$PATH"
+          # Tell podman user namespaces are pre-configured (skip re-exec)
+          export _CONTAINERS_USERNS_CONFIGURED="done"
           echo "=== Pulling originsign image ==="
           podman --storage-driver=vfs --cgroup-manager=cgroupfs pull \
             forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
