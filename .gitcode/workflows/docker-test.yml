@@ -46,16 +46,44 @@ jobs:
             fi
           fi
 
-          # Fallback: download static binary from OBS
+          # Fallback: download static binary from OBS (signed URL)
           if ! command -v podman >/dev/null 2>&1; then
             echo "=== Downloading Podman static binary ==="
-            # Primary: project OBS mirror (fast on Huawei Cloud)
-            # Fallback: GitHub proxy mirrors
-            PODMAN_OBS="https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/podman-linux-amd64.tar.gz"
+            # Generate signed URL from OBS credentials
+            source .gitcode/.env 2>/dev/null || true
+            PODMAN_SIGNED_URL=""
+            if [ -n "${OBS_AK_XUANWU_RUST:-}" ] && [ -n "${OBS_SK_XUANWU_RUST:-}" ]; then
+              echo "  generating signed OBS URL..."
+              PODMAN_SIGNED_URL=$(python3 -c "
+import hashlib, hmac, datetime, urllib.parse
+ak = '${OBS_AK_XUANWU_RUST}'
+sk = '${OBS_SK_XUANWU_RUST}'
+bucket = 'xuanwu-rust'
+region = 'cn-north-4'
+obj = 'dist/podman-linux-amd64.tar.gz'
+expires = 3600
+
+t = datetime.datetime.utcnow()
+ds = t.strftime('%Y%m%d')
+amz_date = t.strftime('%Y%m%dT%H%M%SZ')
+cred = f'{ak}/{ds}/{region}/s3/aws4_request'
+
+canon_req = f'GET\n/{obj}\n\nhost:{bucket}.obs.{region}.myhuaweicloud.com\n\nhost\nUNSIGNED-PAYLOAD'
+sts = f'AWS4-HMAC-SHA256\n{amz_date}\n{ds}/{region}/s3/aws4_request\n{hashlib.sha256(canon_req.encode()).hexdigest()}'
+
+def sign(k, m):
+    return hmac.new(k, m.encode(), hashlib.sha256).digest()
+
+k = sign(sign(sign(sign(('AWS4' + sk).encode(), ds), region, 's3'), 'aws4_request')
+sig = hmac.new(k, sts.encode(), hashlib.sha256).hexdigest()
+
+url = f'https://{bucket}.obs.{region}.myhuaweicloud.com/{obj}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential={urllib.parse.quote(cred)}&X-Amz-Date={amz_date}&X-Amz-Expires={expires}&X-Amz-SignedHeaders=host&X-Amz-Signature={sig}'
+print(url)
+" 2>/dev/null)
+            fi
+
             MIRRORS="
-              $PODMAN_OBS
-              https://mirror.ghproxy.com/https://github.com/mgoltzsche/podman-static/releases/download/v4.7.1/podman-linux-amd64.tar.gz
-              https://ghproxy.net/https://github.com/mgoltzsche/podman-static/releases/download/v4.7.1/podman-linux-amd64.tar.gz
+              ${PODMAN_SIGNED_URL}
             "
             DOWNLOADED=false
             for url in $MIRRORS; do
