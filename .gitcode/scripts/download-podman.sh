@@ -64,25 +64,5 @@ print(url)
   fi
 fi
 
-# --- Fallback: GitHub mirrors ---
-echo "=== Trying GitHub mirrors ==="
-for url in \
-  "https://ghproxy.net/https://github.com/mgoltzsche/podman-static/releases/download/v4.7.1/podman-linux-amd64.tar.gz" \
-  "https://github.com/mgoltzsche/podman-static/releases/download/v4.7.1/podman-linux-amd64.tar.gz"; do
-  echo "  trying: $url"
-  if curl -fsSL --connect-timeout 10 --max-time 120 -o "$DEST_TGZ" "$url" 2>&1; then
-    echo "  download OK"
-    mkdir -p "$DEST_DIR"
-    tar xzf "$DEST_TGZ" -C "$DEST_DIR" --strip-components=1 2>/dev/null || tar xzf "$DEST_TGZ" -C "$DEST_DIR"
-    find "$DEST_DIR" -name podman -type f -exec chmod +x {} \;
-    export PATH="$DEST_DIR:$DEST_DIR/usr/local/bin:$PATH"
-    if command -v podman >/dev/null 2>&1; then
-      echo "Podman $(podman --version) installed via GitHub mirror"
-      exit 0
-    fi
-  fi
-  echo "  failed, trying next..."
-done
-
-echo "ERROR: Could not download Podman"
+echo "ERROR: Could not download Podman from OBS"
 exit 1
