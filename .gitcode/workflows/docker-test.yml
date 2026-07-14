@@ -51,19 +51,11 @@ jobs:
           if $PY37_BIN /bin/yum repolist 2>&1; then
             echo "  existing repos are working!"
           else
-            echo "  existing repos not working, trying to override..."
-            # Try to write repo via sudo, or into an alternative location
+            echo "  existing repos not working, trying to override via sudo..."
             if command -v sudo >/dev/null 2>&1; then
-              sudo bash -c "cat > /etc/yum.repos.d/euleros.repo" <<'REPOEOF'
-[base]
-name=EulerOS-2.0-base
-baseurl=https://mirrors.huaweicloud.com/euler/2.10/os/x86_64/
-enabled=1
-gpgcheck=0
-REPOEOF
+              printf '[base]\nname=EulerOS-2.0-base\nbaseurl=https://mirrors.huaweicloud.com/euler/2.10/os/x86_64/\nenabled=1\ngpgcheck=0\n' | sudo tee /etc/yum.repos.d/euleros.repo > /dev/null
               $PY37_BIN /bin/yum repolist 2>&1 || true
             fi
-
             echo "  also trying existing repo directly..."
             $PY37_BIN /bin/yum --disablerepo='*' --enablerepo='base' repolist 2>&1 || true
           fi
@@ -73,7 +65,6 @@ REPOEOF
             echo "  docker installed via yum"
           else
             echo "  yum install failed, trying rpm direct download..."
-            # Direct download docker RPMs as fallback
             DOCKER_RPM="https://mirrors.huaweicloud.com/docker-ce/linux/centos/7/x86_64/stable/Packages/docker-ce-24.0.7-1.el7.x86_64.rpm"
             curl -fsSL -o /tmp/docker.rpm "$DOCKER_RPM" 2>&1 && {
               rpm -ivh /tmp/docker.rpm 2>&1 || true
@@ -83,7 +74,7 @@ REPOEOF
           if command -v docker >/dev/null 2>&1; then
             echo "=== Docker installed successfully: $(docker --version) ==="
           else
-            echo "=== TIP: docker binary not found, but check dockerd ==="
+            echo "=== TIP: checking for docker binaries ==="
             ls /usr/bin/docker* 2>/dev/null || echo "  no docker binaries found"
             echo "=== ERROR: Docker still not available ==="
             exit 1
@@ -95,10 +86,10 @@ REPOEOF
           docker version 2>&1 || true
           echo "=== Building test image ==="
           mkdir -p /tmp/docker-test
-          cat > /tmp/docker-test/Dockerfile <<'EOF'
+          cat > /tmp/docker-test/Dockerfile <<'DOCKEREOF'
           FROM alpine:3.20
           RUN echo "Docker CI is working!"
           CMD ["echo", "Hello from Docker Image CI"]
-          EOF
+          DOCKEREOF
           docker build -f /tmp/docker-test/Dockerfile -t my-image-name:$(date +%s) /tmp/docker-test
           echo "=== Docker image built successfully ==="
