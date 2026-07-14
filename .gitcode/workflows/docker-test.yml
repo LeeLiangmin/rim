@@ -9,6 +9,7 @@ jobs:
   podman-test:
     runs-on: euleros-2.10.1
     steps:
+      - uses: checkout-action@0.0.1
       - name: Setup Podman
         run: |
           set -euo pipefail
