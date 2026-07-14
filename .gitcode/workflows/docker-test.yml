@@ -25,14 +25,19 @@ jobs:
           set -euo pipefail
           export PATH="/tmp/podman:/tmp/podman/usr/local/bin:$PATH"
           export _CONTAINERS_USERNS_CONFIGURED="done"
-          # Use /tmp for storage (avoids chown permission issues)
           export HOME=/tmp/podman-home
-          mkdir -p "$HOME"
+          mkdir -p "$HOME"/{.local/share/containers/storage,run/containers/storage}
+          # Try overlay first (no chown needed), fallback to vfs
+          DRIVER="overlay"
+          if ! podman --storage-driver=overlay --cgroup-manager=cgroupfs info 2>/dev/null | grep -q overlay; then
+            DRIVER="vfs"
+          fi
+          echo "Using storage driver: $DRIVER"
           echo "=== Pulling originsign image ==="
-          podman --storage-driver=vfs --cgroup-manager=cgroupfs pull \
+          podman --storage-driver="$DRIVER" --cgroup-manager=cgroupfs pull \
             forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
           echo "=== Running originsign server ==="
-          podman --storage-driver=vfs --cgroup-manager=cgroupfs run -d --name originsign-server \
+          podman --storage-driver="$DRIVER" --cgroup-manager=cgroupfs run -d --name originsign-server \
             -p 81:8081 \
             forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2 \
             originsign server
