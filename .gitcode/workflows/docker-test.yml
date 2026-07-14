@@ -1,4 +1,4 @@
-name: Docker Image CI
+name: Docker Capability Test
 
 on:
   push:
@@ -7,147 +7,140 @@ on:
     branches: ["main", "master"]
 
 jobs:
-  build:
-    runs-on: euleros-2.10.1
+  # ============================================================
+  # Test 1: Try different runner labels for native Docker support
+  # ============================================================
+  test-ubuntu:
+    runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
-      - uses: checkout-action@0.0.1
-      - name: Setup Docker
+      - name: Check Docker (ubuntu-latest)
         run: |
           set -euo pipefail
-
-          DOCKER_DIR="/tmp/docker"
-          export PATH="$DOCKER_DIR:$PATH"
-
-          if command -v docker >/dev/null 2>&1 && command -v dockerd >/dev/null 2>&1; then
-            echo "Docker already available: $(docker --version)"
-          else
-            DOCKER_VERSION="24.0.7"
-            DOCKER_MIRROR="https://mirrors.huaweicloud.com/docker-ce/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz"
-            DOCKER_OFFICIAL="https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz"
-
-            echo "=== Downloading Docker ${DOCKER_VERSION} ==="
-            curl -fsSL --connect-timeout 10 --max-time 300 -o /tmp/docker.tgz "$DOCKER_MIRROR" 2>&1 || \
-              curl -fsSL --connect-timeout 10 --max-time 300 -o /tmp/docker.tgz "$DOCKER_OFFICIAL" 2>&1
-
-            echo "=== Extracting ==="
-            rm -rf "$DOCKER_DIR"
-            tar xzf /tmp/docker.tgz -C /tmp
-            ls -la "$DOCKER_DIR/"
-            echo "  docker:  $($DOCKER_DIR/docker --version)"
-            echo "  dockerd: $($DOCKER_DIR/dockerd --version 2>&1 || true)"
-            echo "  containerd: $(ls $DOCKER_DIR/containerd* 2>/dev/null || echo none)"
-          fi
-
-          echo "=== Starting dockerd ==="
-          # Kill any existing dockerd
-          pkill dockerd 2>/dev/null || true
-          sleep 1
-
-          # Data dir in tmp
-          DOCKER_DATA="/tmp/docker-data"
-          rm -rf "$DOCKER_DATA"
-          mkdir -p "$DOCKER_DATA"
-
-          # Check what user we are
-          WHOAMI=$(whoami)
-          echo "  running as: $WHOAMI (uid=$(id -u))"
-
-          # Try sudo directly, then fallback to non-root
-          DOCKERD_STARTED=false
-          if command -v sudo >/dev/null 2>&1; then
-            echo "  trying sudo dockerd..."
-            sudo "$DOCKER_DIR/dockerd" \
-              --data-root "$DOCKER_DATA" \
-              --iptables=false \
-              --ip6tables=false \
-              --bridge=none \
-              --host=unix:///tmp/docker.sock \
-              --pidfile=/tmp/docker.pid \
-              --log-level=warn \
-              > /tmp/dockerd.log 2>&1 &
-            DOCKERD_PID=$!
-            sleep 1
-            if kill -0 $DOCKERD_PID 2>/dev/null; then
-              echo "  sudo dockerd started (pid=$DOCKERD_PID)"
-              DOCKERD_STARTED=true
-            else
-              echo "  sudo failed, checking log..."
-              cat /tmp/dockerd.log 2>/dev/null || true
-            fi
-          fi
-
-          if [ "$DOCKERD_STARTED" = false ]; then
-            echo "  trying rootless dockerd (will likely fail without rootlesskit)..."
-            "$DOCKER_DIR/dockerd" \
-              --data-root "$DOCKER_DATA" \
-              --iptables=false \
-              --ip6tables=false \
-              --bridge=none \
-              --host=unix:///tmp/docker.sock \
-              --pidfile=/tmp/docker.pid \
-              --log-level=warn \
-              > /tmp/dockerd.log 2>&1 &
-            DOCKERD_PID=$!
-            sleep 1
-            if kill -0 $DOCKERD_PID 2>/dev/null; then
-              echo "  rootless dockerd started (pid=$DOCKERD_PID)"
-              DOCKERD_STARTED=true
-            fi
-          fi
-
-          # Wait for dockerd to be ready
-          echo "  waiting for dockerd to start..."
-          export DOCKER_HOST=unix:///tmp/docker.sock
-          for i in $(seq 1 15); do
-            if docker info >/dev/null 2>&1; then
-              echo "  dockerd is ready! (took ${i}s)"
-              break
-            fi
-            sleep 1
-            echo "  ."
-          done
-
-          # Show status
-          echo "=== Dockerd status ==="
-          if docker info >/dev/null 2>&1; then
-            docker info 2>&1 | head -15
-          else
-            echo "  ERROR: dockerd failed to start"
-            echo "  --- dockerd log ---"
-            cat /tmp/dockerd.log 2>/dev/null || true
-            echo "  --- end log ---"
-            exit 1
-          fi
-
-          # Save env for next step
-          echo "DOCKER_HOST=unix:///tmp/docker.sock" > /tmp/docker-env
-          echo "PATH=$DOCKER_DIR:$PATH" >> /tmp/docker-env
-
-      - name: Build and Run Docker image
-        run: |
-          set -euo pipefail
-
-          # Source env from previous step
-          if [ -f /tmp/docker-env ]; then
-            source /tmp/docker-env
-          fi
-          export DOCKER_HOST="${DOCKER_HOST:-unix:///tmp/docker.sock}"
-          export PATH="/tmp/docker:$PATH"
-
-          echo "=== Docker info ==="
-          docker version 2>&1 || true
-          echo "=== Building test image ==="
-          mkdir -p /tmp/docker-build
-          cat > /tmp/docker-build/Dockerfile <<'DOCKEREOF'
+          echo "=== OS ===" && cat /etc/os-release | head -3 || true
+          echo "=== Docker ==="
+          if command -v docker >/dev/null 2>&1; then
+            docker version 2>&1 || true
+            docker info 2>&1 | head -5 || true
+            echo "=== Building test image ==="
+            docker build --label test=true -t docker-test:latest - <<'EOF'
           FROM alpine:3.20
-          RUN echo "Docker CI is working!"
-          CMD ["echo", "Hello from Docker Image CI"]
-          DOCKEREOF
-          docker build -f /tmp/docker-build/Dockerfile -t docker-ci-test:latest /tmp/docker-build
+          RUN echo "Docker on ubuntu-latest works!"
+          CMD ["echo", "Hello from ubuntu-latest"]
+          EOF
+            docker run --rm docker-test:latest
+            echo "RESULT: ubuntu-latest has working Docker! ✅"
+          else
+            echo "RESULT: ubuntu-latest has NO Docker ❌"
+          fi
+
+  test-centos:
+    runs-on: centos-latest
+    continue-on-error: true
+    steps:
+      - name: Check Docker (centos-latest)
+        run: |
+          set -euo pipefail
+          echo "=== OS ===" && cat /etc/os-release | head -3 || true
+          if command -v docker >/dev/null 2>&1; then
+            docker version 2>&1 || true
+            echo "RESULT: centos-latest has working Docker! ✅"
+          else
+            echo "RESULT: centos-latest has NO Docker ❌"
+          fi
+
+  test-euleros-native:
+    runs-on: euleros-latest
+    continue-on-error: true
+    steps:
+      - name: Check Docker (euleros-latest)
+        run: |
+          set -euo pipefail
+          echo "=== OS ===" && cat /etc/os-release | head -3 || true
+          if command -v docker >/dev/null 2>&1; then
+            docker version 2>&1 || true
+            echo "RESULT: euleros-latest has working Docker! ✅"
+          else
+            echo "RESULT: euleros-latest has NO Docker ❌"
+          fi
+
+  # ============================================================
+  # Test 2: Podman (rootless, no daemon needed)
+  # ============================================================
+  test-podman:
+    runs-on: euleros-2.10.1
+    continue-on-error: true
+    steps:
+      - name: Setup Podman
+        run: |
+          set -euo pipefail
+
+          PODMAN_DIR="/tmp/podman"
+          export PATH="$PODMAN_DIR:$PATH"
+
+          if command -v podman >/dev/null 2>&1; then
+            echo "Podman already installed: $(podman --version)"
+            exit 0
+          fi
+
+          echo "=== OS ===" && cat /etc/os-release | head -3 || true
+
+          # Try yum first
+          echo "=== Attempt yum install podman ==="
+          PY37_BIN=""
+          for p in /usr/bin/python3.7 /usr/bin/python37; do
+            [ -x "$p" ] && PY37_BIN="$p" && break
+          done
+          if [ -n "$PY37_BIN" ]; then
+            $PY37_BIN /bin/yum install -y podman 2>&1 && echo "Podman installed via yum" || true
+          fi
+
+          # Fallback: static binary
+          if ! command -v podman >/dev/null 2>&1; then
+            echo "=== Downloading Podman static binary ==="
+            PODMAN_URL="https://github.com/mgoltzsche/podman-static/releases/download/v4.7.1/podman-linux-amd64.tar.gz"
+            if curl -fsSL --connect-timeout 10 --max-time 300 -o /tmp/podman.tar.gz "$PODMAN_URL" 2>&1; then
+              mkdir -p "$PODMAN_DIR"
+              tar xzf /tmp/podman.tar.gz -C "$PODMAN_DIR"
+              echo "Podman extracted: $(which podman 2>/dev/null || echo not found)"
+            else
+              echo "Podman download failed"
+            fi
+          fi
+
+          if command -v podman >/dev/null 2>&1; then
+            echo "=== Podman version ==="
+            podman --version
+            echo "RESULT: Podman binary available ✅"
+          else
+            echo "RESULT: Podman NOT available ❌"
+          fi
+
+      - name: Build and Run with Podman
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/podman:$PATH"
+
+          if ! command -v podman >/dev/null 2>&1; then
+            echo "Podman not available, skipping build test"
+            exit 0
+          fi
+
+          echo "=== Podman version ==="
+          podman version 2>&1 || true
+          podman info 2>&1 | head -10 || true
+
+          echo "=== Building test image ==="
+          cat > /tmp/Containerfile <<'EOF'
+          FROM alpine:3.20
+          RUN echo "Podman CI is working!"
+          CMD ["echo", "Hello from Podman CI"]
+          EOF
+          podman build -f /tmp/Containerfile -t podman-test:latest /tmp
 
           echo "=== Running test container ==="
-          docker run --rm docker-ci-test:latest
+          podman run --rm podman-test:latest
 
-          echo "=== Docker cleanup ==="
-          docker rmi docker-ci-test:latest || true
-          echo "=== Docker pipeline complete! ==="
+          echo "=== Cleanup ==="
+          podman rmi podman-test:latest || true
+          echo "RESULT: Podman build+run works! ✅"
