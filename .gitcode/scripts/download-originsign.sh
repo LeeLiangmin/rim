@@ -57,15 +57,20 @@ if [ -x "$DEST_DIR/originsign" ]; then
   if [ -n "$IMG_LD" ] && [ -n "$IMG_LIBDIR" ]; then
     echo "  image ld: $IMG_LD"
     echo "  image libdir: $IMG_LIBDIR"
-    # Create wrapper that runs originsign with its own glibc
+    # Collect all lib dirs from the container image (for OpenSSL etc)
+    IMG_LIBDIRS=$(find "$WORK/extract" -name "libcrypto.so*" -o -name "libssl.so*" 2>/dev/null | head -5 | xargs dirname | sort -u | tr '\n' ':')
+    IMG_LIBDIRS="${IMG_LIBDIRS}${IMG_LIBDIR}"
+    echo "  all libdirs: $IMG_LIBDIRS"
+    # Create wrapper that runs originsign with its own glibc + OpenSSL
     mv "$DEST_DIR/originsign" "$DEST_DIR/originsign.real"
     cat > "$DEST_DIR/originsign" << 'WRAPPER'
 #!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
-exec WRAPPER_LD --library-path WRAPPER_LIBDIR "$DIR/originsign.real" "$@"
+export LD_LIBRARY_PATH="WRAPPER_LIBDIRS"
+exec WRAPPER_LD --library-path "WRAPPER_LIBDIRS" "$DIR/originsign.real" "$@"
 WRAPPER
     sed -i "s|WRAPPER_LD|$IMG_LD|" "$DEST_DIR/originsign"
-    sed -i "s|WRAPPER_LIBDIR|$IMG_LIBDIR|" "$DEST_DIR/originsign"
+    sed -i "s|WRAPPER_LIBDIRS|$IMG_LIBDIRS|" "$DEST_DIR/originsign"
     chmod +x "$DEST_DIR/originsign"
     echo "  wrapper created"
   fi
