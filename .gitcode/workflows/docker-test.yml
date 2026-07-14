@@ -22,22 +22,35 @@ jobs:
             exit 0
           fi
 
-          echo "=== Downloading Docker static bundle (includes containerd/ctr/runc) ==="
+          echo "=== Downloading Docker static bundle ==="
           bash .gitcode/scripts/download-docker.sh /tmp/docker
 
-          echo "=== containerd version ==="
-          containerd --version
-          ctr --version
+          echo "=== containerd $(containerd --version)"
+          echo "=== ctr $(ctr --version)"
+
+          # Generate minimal config pointing everything to /tmp
+          mkdir -p /tmp/containerd/root /tmp/containerd/state
+          cat > /tmp/containerd-config.toml << 'TOML'
+          version = 2
+          root = "/tmp/containerd/root"
+          state = "/tmp/containerd/state"
+          [grpc]
+            address = "/tmp/containerd.sock"
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+            runtime_type = "io.containerd.runc.v2"
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+            BinaryName = "/tmp/docker/runc"
+          TOML
 
           echo "=== Starting containerd ==="
-          export _CONTAINERS_USERNS_CONFIGURED="done"
-          containerd --config /dev/null --root /tmp/containerd --state /tmp/containerd-state --log-level warn &
+          containerd --config /tmp/containerd-config.toml --log-level warn &
           CONTAINERD_PID=$!
           sleep 2
           if kill -0 $CONTAINERD_PID 2>/dev/null; then
             echo "  containerd started (pid=$CONTAINERD_PID)"
           else
             echo "  ERROR: containerd failed to start"
+            cat /tmp/containerd/state/*.log 2>/dev/null || true
             exit 1
           fi
 
@@ -45,13 +58,13 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="/tmp/docker:$PATH"
-          export _CONTAINERS_USERNS_CONFIGURED="done"
 
           echo "=== Pulling originsign image ==="
-          ctr image pull forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
+          ctr --address /tmp/containerd.sock image pull \
+            forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
 
           echo "=== Running originsign container ==="
-          ctr run -d --net-host \
+          ctr --address /tmp/containerd.sock run -d --net-host \
             forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2 \
             originsign-server originsign server
 
@@ -62,7 +75,7 @@ jobs:
             -d '{"base_config":{"algo":"rsa","kms":"local","flow":"sigstore","sys":"pki"},"digest":"GitCode CI Test","key_id":"test"}' || true
 
           echo "=== Cleanup ==="
-          ctr task kill originsign-server || true
-          ctr container rm originsign-server || true
+          ctr --address /tmp/containerd.sock task kill originsign-server || true
+          ctr --address /tmp/containerd.sock container rm originsign-server || true
 
           echo "=== containerd pipeline complete! ==="
