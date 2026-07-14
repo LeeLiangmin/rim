@@ -25,20 +25,12 @@ jobs:
           bash .gitcode/scripts/download-osslsigncode.sh /tmp/osslsigncode
           export PATH="/tmp/osslsigncode:$PATH"
 
-          echo "=== Verify tools ==="
-          originsign help 2>&1 | head -1 || true
-          osslsigncode version 2>&1 || true
-
           echo "=== Init KMS + generate keys ==="
           originsign import --kms local
           originsign keygen --algo rsa
           originsign import --kms local --algo rsa --priv rsa-priv-key.pem --pub rsa-pub-key.pem
-          originsign import --kms local --list
 
-          echo "=== Start server ==="
-          originsign server &
-          sleep 3
-          curl -s -o /dev/null http://localhost:8081 && echo "  server OK" || echo "  server FAIL"
+          echo "=== Tools ready ==="
 
       - name: Sign hope.exe
         run: |

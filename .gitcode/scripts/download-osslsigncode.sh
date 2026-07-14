@@ -50,6 +50,19 @@ fi
 
 if [ -x "$TOOL" ]; then
   echo "osslsigncode ready"
+  # Create wrapper with container libs (osslsigncode needs libssl.so.3 etc)
+  if [ -d /tmp/originsign-work/extract ]; then
+    IMG_LD=$(find /tmp/originsign-work/extract -name ld-linux-x86-64.so.2 -type f 2>/dev/null | head -1)
+    IMG_LIBDIRS=$(find /tmp/originsign-work/extract -name "libcrypto.so*" -o -name "libssl.so*" 2>/dev/null | head -5 | xargs dirname | sort -u | tr '\n' ':')
+    IMG_LIBDIRS="${IMG_LIBDIRS}$(find /tmp/originsign-work/extract -name libc.so.6 -type f 2>/dev/null | head -1 | xargs dirname)"
+    if [ -n "$IMG_LD" ] && [ -n "$IMG_LIBDIRS" ]; then
+      mv "$TOOL" "${TOOL}.real"
+      printf '#!/bin/bash\nexport LD_LIBRARY_PATH="%s"\nexec %s --library-path "%s" "%s.real" "$@"\n' \
+        "$IMG_LIBDIRS" "$IMG_LD" "$IMG_LIBDIRS" "$TOOL" > "$TOOL"
+      chmod +x "$TOOL"
+      echo "  wrapper created (libs: $IMG_LIBDIRS)"
+    fi
+  fi
   export PATH="$DEST_DIR:$PATH"
 else
   echo "ERROR: osslsigncode not available"
