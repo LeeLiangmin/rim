@@ -51,7 +51,7 @@ jobs:
             echo "=== Downloading Podman static binary ==="
             # Primary: project OBS mirror (fast on Huawei Cloud)
             # Fallback: GitHub proxy mirrors
-            PODMAN_OBS="https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/podman-linux-amd64-v4.7.1.tar.gz"
+            PODMAN_OBS="https://xuanwu-rust.obs.cn-north-4.myhuaweicloud.com/dist/podman-linux-amd64.tar.gz"
             MIRRORS="
               $PODMAN_OBS
               https://mirror.ghproxy.com/https://github.com/mgoltzsche/podman-static/releases/download/v4.7.1/podman-linux-amd64.tar.gz
