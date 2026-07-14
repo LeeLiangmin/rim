@@ -48,6 +48,28 @@ done <<< "$LAYERS"
 if [ -x "$DEST_DIR/originsign" ]; then
   echo "=== originsign binary ready ==="
   file "$DEST_DIR/originsign" || true
+
+  # originsign was compiled against a newer glibc than EulerOS has.
+  # Use the ld-linux and libs from the container image itself.
+  IMG_LD=$(find "$WORK/extract" -name ld-linux-x86-64.so.2 -type f 2>/dev/null | head -1)
+  IMG_LIBDIR=$(find "$WORK/extract" -name libc.so.6 -type f 2>/dev/null | head -1 | xargs dirname)
+
+  if [ -n "$IMG_LD" ] && [ -n "$IMG_LIBDIR" ]; then
+    echo "  image ld: $IMG_LD"
+    echo "  image libdir: $IMG_LIBDIR"
+    # Create wrapper that runs originsign with its own glibc
+    mv "$DEST_DIR/originsign" "$DEST_DIR/originsign.real"
+    cat > "$DEST_DIR/originsign" << 'WRAPPER'
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec WRAPPER_LD --library-path WRAPPER_LIBDIR "$DIR/originsign.real" "$@"
+WRAPPER
+    sed -i "s|WRAPPER_LD|$IMG_LD|" "$DEST_DIR/originsign"
+    sed -i "s|WRAPPER_LIBDIR|$IMG_LIBDIR|" "$DEST_DIR/originsign"
+    chmod +x "$DEST_DIR/originsign"
+    echo "  wrapper created"
+  fi
+
   "$DEST_DIR/originsign" --version 2>&1 || true
 else
   echo "ERROR: originsign binary not found in image layers"
