@@ -58,3 +58,12 @@ jobs:
           echo "=== Cleanup ==="
           pkill originsign 2>/dev/null || true
           echo "=== Pipeline complete ==="
+
+      - name: Upload signed file to release
+        run: |
+          set -euo pipefail
+          cd repo_workspace
+          . .gitcode/.env
+          mkdir -p dist/signed
+          cp /tmp/hope-signed.exe dist/signed/hope-signed.exe
+          bash .gitcode/scripts/upload-gitcode-release.sh --tag "${DEFAULT_RELEASE_TAG:-dev}" --dist-dir dist/signed
