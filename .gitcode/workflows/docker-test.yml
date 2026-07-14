@@ -1,4 +1,4 @@
-name: Podman Signing Service Test
+name: Container Signing Service Test (containerd)
 
 on:
   push:
@@ -6,47 +6,63 @@ on:
   workflow_dispatch:
 
 jobs:
-  podman-test:
+  containerd-test:
     runs-on: euleros-2.10.1
     steps:
       - uses: checkout-action@0.0.1
-      - name: Setup Podman
+      - name: Setup containerd
         run: |
           set -euo pipefail
-          cd repo_workspace
-          . .gitcode/.env
+          cd repo_workspace && . .gitcode/.env
           export OBS_AK_XUANWU_RUST OBS_SK_XUANWU_RUST
-          bash .gitcode/scripts/download-podman.sh /tmp/podman
-          export PATH="/tmp/podman:/tmp/podman/usr/local/bin:$PATH"
-          echo "=== Podman ready ==="
-          podman --version
+          export PATH="/tmp/docker:$PATH"
+
+          if command -v ctr >/dev/null 2>&1; then
+            echo "ctr already available"
+            exit 0
+          fi
+
+          echo "=== Downloading Docker static bundle (includes containerd/ctr/runc) ==="
+          bash .gitcode/scripts/download-docker.sh /tmp/docker
+
+          echo "=== containerd version ==="
+          containerd --version
+          ctr --version
+
+          echo "=== Starting containerd ==="
+          export _CONTAINERS_USERNS_CONFIGURED="done"
+          containerd --config /dev/null --root /tmp/containerd --state /tmp/containerd-state --log-level warn &
+          CONTAINERD_PID=$!
+          sleep 2
+          if kill -0 $CONTAINERD_PID 2>/dev/null; then
+            echo "  containerd started (pid=$CONTAINERD_PID)"
+          else
+            echo "  ERROR: containerd failed to start"
+            exit 1
+          fi
+
       - name: Pull and Run Originsign
         run: |
           set -euo pipefail
-          export PATH="/tmp/podman:/tmp/podman/usr/local/bin:$PATH"
+          export PATH="/tmp/docker:$PATH"
           export _CONTAINERS_USERNS_CONFIGURED="done"
-          export HOME=/tmp/podman-home
-          mkdir -p "$HOME"/{.local/share/containers/storage,run/containers/storage}
-          # Try overlay first (no chown needed), fallback to vfs
-          DRIVER="overlay"
-          if ! podman --storage-driver=overlay --cgroup-manager=cgroupfs info 2>/dev/null | grep -q overlay; then
-            DRIVER="vfs"
-          fi
-          echo "Using storage driver: $DRIVER"
+
           echo "=== Pulling originsign image ==="
-          podman --storage-driver="$DRIVER" --cgroup-manager=cgroupfs pull \
-            forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
-          echo "=== Running originsign server ==="
-          podman --storage-driver="$DRIVER" --cgroup-manager=cgroupfs run -d --name originsign-server \
-            -p 81:8081 \
+          ctr image pull forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
+
+          echo "=== Running originsign container ==="
+          ctr run -d --net-host \
             forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2 \
-            originsign server
+            originsign-server originsign server
+
           echo "=== Test signing API ==="
           sleep 5
-          curl -s http://localhost:81/v1/sign/digest -X POST \
+          curl -s http://localhost:8081/v1/sign/digest -X POST \
             -H "Content-Type: application/json" \
             -d '{"base_config":{"algo":"rsa","kms":"local","flow":"sigstore","sys":"pki"},"digest":"GitCode CI Test","key_id":"test"}' || true
+
           echo "=== Cleanup ==="
-          podman stop originsign-server || true
-          podman rm originsign-server || true
-          echo "=== Podman pipeline complete! ==="
+          ctr task kill originsign-server || true
+          ctr container rm originsign-server || true
+
+          echo "=== containerd pipeline complete! ==="
