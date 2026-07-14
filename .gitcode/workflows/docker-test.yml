@@ -1,4 +1,4 @@
-name: Container Signing Service Test (containerd)
+name: Originsign CI (extract from registry)
 
 on:
   push:
@@ -6,76 +6,37 @@ on:
   workflow_dispatch:
 
 jobs:
-  containerd-test:
+  originsign-test:
     runs-on: euleros-2.10.1
     steps:
       - uses: checkout-action@0.0.1
-      - name: Setup containerd
+      - name: Extract originsign
         run: |
           set -euo pipefail
-          cd repo_workspace && . .gitcode/.env
-          export OBS_AK_XUANWU_RUST OBS_SK_XUANWU_RUST
-          export PATH="/tmp/docker:$PATH"
+          bash repo_workspace/.gitcode/scripts/download-originsign.sh /tmp/originsign
+          export PATH="/tmp/originsign:$PATH"
+          echo "=== originsign ready ==="
+          originsign --version 2>&1 || true
 
-          if command -v ctr >/dev/null 2>&1; then
-            echo "ctr already available"
-            exit 0
-          fi
-
-          echo "=== Downloading Docker static bundle ==="
-          bash .gitcode/scripts/download-docker.sh /tmp/docker
-
-          echo "=== containerd $(containerd --version)"
-          echo "=== ctr $(ctr --version)"
-
-          # Generate minimal config pointing everything to /tmp
-          mkdir -p /tmp/containerd/root /tmp/containerd/state
-          cat > /tmp/containerd-config.toml << 'TOML'
-          version = 2
-          root = "/tmp/containerd/root"
-          state = "/tmp/containerd/state"
-          [grpc]
-            address = "/tmp/containerd.sock"
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-            runtime_type = "io.containerd.runc.v2"
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-            BinaryName = "/tmp/docker/runc"
-          TOML
-
-          echo "=== Starting containerd ==="
-          containerd --config /tmp/containerd-config.toml --log-level warn &
-          CONTAINERD_PID=$!
-          sleep 2
-          if kill -0 $CONTAINERD_PID 2>/dev/null; then
-            echo "  containerd started (pid=$CONTAINERD_PID)"
-          else
-            echo "  ERROR: containerd failed to start"
-            cat /tmp/containerd/state/*.log 2>/dev/null || true
-            exit 1
-          fi
-
-      - name: Pull and Run Originsign
+      - name: Run originsign server + test API
         run: |
           set -euo pipefail
-          export PATH="/tmp/docker:$PATH"
+          export PATH="/tmp/originsign:$PATH"
 
-          echo "=== Pulling originsign image ==="
-          ctr --address /tmp/containerd.sock image pull \
-            forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
+          echo "=== Initializing KMS ==="
+          originsign import --kms local
+          originsign keygen --algo rsa 2>&1 || true
+          originsign import --kms local --list
 
-          echo "=== Running originsign container ==="
-          ctr --address /tmp/containerd.sock run -d --net-host \
-            forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2 \
-            originsign-server originsign server
+          echo "=== Starting server (background) ==="
+          originsign server &
+          sleep 3
 
-          echo "=== Test signing API ==="
-          sleep 5
-          curl -s http://localhost:8081/v1/sign/digest -X POST \
+          echo "=== Testing sign API ==="
+          curl -s -X POST http://localhost:8081/v1/sign/digest \
             -H "Content-Type: application/json" \
-            -d '{"base_config":{"algo":"rsa","kms":"local","flow":"sigstore","sys":"pki"},"digest":"GitCode CI Test","key_id":"test"}' || true
+            -d '{"base_config":{"algo":"rsa","kms":"local","flow":"sigstore","sys":"pki"},"digest":"Hello GitCode CI","key_id":"test"}' || true
 
           echo "=== Cleanup ==="
-          ctr --address /tmp/containerd.sock task kill originsign-server || true
-          ctr --address /tmp/containerd.sock container rm originsign-server || true
-
-          echo "=== containerd pipeline complete! ==="
+          pkill originsign || true
+          echo "=== Pipeline complete ==="
