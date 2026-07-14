@@ -28,6 +28,7 @@ for i, layer in enumerate(m.get('layers', [])):
 " <<< "$MANIFEST")
 
 echo "=== Downloading layers ==="
+mkdir -p "$WORK/extract"
 while IFS='|' read -r digest size; do
   echo "  layer: $digest ($size bytes)"
   curl -fsSL --connect-timeout 10 --max-time 120 \
