@@ -14,6 +14,8 @@ jobs:
         run: |
           set -euo pipefail
           cd repo_workspace
+          . .gitcode/.env
+          export OBS_AK_XUANWU_RUST OBS_SK_XUANWU_RUST
 
           echo "=== Download originsign ==="
           bash .gitcode/scripts/download-originsign.sh /tmp/originsign
