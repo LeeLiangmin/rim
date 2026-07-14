@@ -1,0 +1,27 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+
+jobs:
+  build:
+    runs-on: euleros-2.10.1
+    steps:
+      - uses: checkout-action@0.0.1
+      - name: Build the Docker image
+        run: |
+          set -euo pipefail
+          echo "=== Docker version ==="
+          docker version 2>&1 || true
+          echo "=== Building test image ==="
+          mkdir -p /tmp/docker-test
+          cat > /tmp/docker-test/Dockerfile <<'EOF'
+          FROM alpine:3.20
+          RUN echo "Docker CI is working!"
+          CMD ["echo", "Hello from Docker Image CI"]
+          EOF
+          docker build -f /tmp/docker-test/Dockerfile -t my-image-name:$(date +%s) /tmp/docker-test
+          echo "=== Docker image built successfully ==="
