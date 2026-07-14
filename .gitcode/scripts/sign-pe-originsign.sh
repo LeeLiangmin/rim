@@ -54,20 +54,13 @@ echo "$CERT_B64" | base64 -d > /tmp/certificate.pem 2>/dev/null || {
 }
 echo "  cert decoded ($(wc -c < /tmp/certificate.pem) bytes)"
 
-# 7. Sign PE with osslsigncode (use cert + key from originsign output)
-#    originsign uses PKI flow, cert is the X.509 signing cert.
-#    Sign with -certs (certificate) and -key (private key, already in KMS).
-#    Since originsign holds the private key, we need to export it or use the .pem from keygen.
-if [ -f rsa-priv-key.pem ] && [ -f rsa-pub-key.pem ]; then
-  # Export to PKCS12 for osslsigncode
-  openssl pkcs12 -export -in /tmp/certificate.pem -inkey rsa-priv-key.pem \
-    -out /tmp/signing.pfx -passout pass: 2>/dev/null || true
-  osslsigncode sign -pkcs12 /tmp/signing.pfx -in "$UNSIGNED" -out "$SIGNED" 2>&1
+# 7. Sign PE with osslsigncode using PEM key+cert directly (no PKCS12 needed)
+if [ -f rsa-priv-key.pem ]; then
+  osslsigncode sign -key rsa-priv-key.pem -certs /tmp/certificate.pem \
+    -in "$UNSIGNED" -out "$SIGNED" 2>&1
 else
-  # Fallback: attach signature to a detached .sig file
-  echo "$SIGNATURE" > "${SIGNED}.sig"
-  cp "$UNSIGNED" "$SIGNED"
-  echo "  NOTE: osslsigncode PKCS12 export failed, saved detached .sig"
+  echo "ERROR: rsa-priv-key.pem not found"
+  exit 1
 fi
 
 echo "=== Signed: $SIGNED ==="
