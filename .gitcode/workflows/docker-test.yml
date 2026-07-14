@@ -49,17 +49,12 @@ jobs:
           # Fallback: download static binary from OBS (signed URL)
           if ! command -v podman >/dev/null 2>&1; then
             echo "=== Downloading Podman static binary ==="
-            # .env is in the checked-out repo; find it via WORKSPACE or relative paths
-            for env_path in "${SHARE_PATH:-}/repo_workspace/.gitcode/.env" \
-                            "../repo_workspace/.gitcode/.env" \
-                            "repo_workspace/.gitcode/.env"; do
-              if [ -f "$env_path" ]; then
-                echo "  sourcing $env_path"
-                source "$env_path" 2>/dev/null || true
-                break
-              fi
-            done
-            echo "  OBS_AK set: ${OBS_AK_XUANWU_RUST:+yes}" 
+            # .env is in repo_workspace/ (CWD is workspace root)
+            if [ -f repo_workspace/.gitcode/.env ]; then
+              echo "  loading repo_workspace/.gitcode/.env"
+              . repo_workspace/.gitcode/.env
+            fi
+            echo "  OBS_AK set: ${OBS_AK_XUANWU_RUST:+yes}"
             echo "  OBS_SK set: ${OBS_SK_XUANWU_RUST:+yes}"
             PODMAN_SIGNED_URL=""
             if [ -n "${OBS_AK_XUANWU_RUST:-}" ] && [ -n "${OBS_SK_XUANWU_RUST:-}" ]; then
