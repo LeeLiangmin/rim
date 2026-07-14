@@ -1,82 +1,17 @@
-name: Docker Capability Test
+name: Podman Signing Service Test
 
 on:
   push:
     branches: ["main", "master"]
-  pull_request:
-    branches: ["main", "master"]
+  workflow_dispatch:
 
 jobs:
-  # ============================================================
-  # Test 1: Try different runner labels for native Docker support
-  # ============================================================
-  test-ubuntu:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - name: Check Docker (ubuntu-latest)
-        run: |
-          set -euo pipefail
-          echo "=== OS ===" && cat /etc/os-release | head -3 || true
-          echo "=== Docker ==="
-          if command -v docker >/dev/null 2>&1; then
-            docker version 2>&1 || true
-            docker info 2>&1 | head -5 || true
-            echo "=== Building test image ==="
-            docker build --label test=true -t docker-test:latest - <<'EOF'
-          FROM alpine:3.20
-          RUN echo "Docker on ubuntu-latest works!"
-          CMD ["echo", "Hello from ubuntu-latest"]
-          EOF
-            docker run --rm docker-test:latest
-            echo "RESULT: ubuntu-latest has working Docker! ✅"
-          else
-            echo "RESULT: ubuntu-latest has NO Docker ❌"
-          fi
-
-  test-centos:
-    runs-on: centos-latest
-    continue-on-error: true
-    steps:
-      - name: Check Docker (centos-latest)
-        run: |
-          set -euo pipefail
-          echo "=== OS ===" && cat /etc/os-release | head -3 || true
-          if command -v docker >/dev/null 2>&1; then
-            docker version 2>&1 || true
-            echo "RESULT: centos-latest has working Docker! ✅"
-          else
-            echo "RESULT: centos-latest has NO Docker ❌"
-          fi
-
-  test-euleros-native:
-    runs-on: euleros-latest
-    continue-on-error: true
-    steps:
-      - name: Check Docker (euleros-latest)
-        run: |
-          set -euo pipefail
-          echo "=== OS ===" && cat /etc/os-release | head -3 || true
-          if command -v docker >/dev/null 2>&1; then
-            docker version 2>&1 || true
-            echo "RESULT: euleros-latest has working Docker! ✅"
-          else
-            echo "RESULT: euleros-latest has NO Docker ❌"
-          fi
-
-  # ============================================================
-  # Test 2: Podman (rootless, no daemon needed)
-  # ============================================================
-  test-podman:
+  podman-test:
     runs-on: euleros-2.10.1
-    continue-on-error: true
     steps:
       - name: Setup Podman
         run: |
           set -euo pipefail
-
-          PODMAN_DIR="/tmp/podman"
-          export PATH="$PODMAN_DIR:$PATH"
 
           if command -v podman >/dev/null 2>&1; then
             echo "Podman already installed: $(podman --version)"
@@ -92,55 +27,86 @@ jobs:
             [ -x "$p" ] && PY37_BIN="$p" && break
           done
           if [ -n "$PY37_BIN" ]; then
-            $PY37_BIN /bin/yum install -y podman 2>&1 && echo "Podman installed via yum" || true
+            $PY37_BIN /bin/yum install -y podman 2>&1 && echo "Podman installed via yum!" || true
           fi
 
-          # Fallback: static binary
+          # Fallback: download static binary
           if ! command -v podman >/dev/null 2>&1; then
             echo "=== Downloading Podman static binary ==="
-            PODMAN_URL="https://github.com/mgoltzsche/podman-static/releases/download/v4.7.1/podman-linux-amd64.tar.gz"
-            if curl -fsSL --connect-timeout 10 --max-time 300 -o /tmp/podman.tar.gz "$PODMAN_URL" 2>&1; then
-              mkdir -p "$PODMAN_DIR"
-              tar xzf /tmp/podman.tar.gz -C "$PODMAN_DIR"
-              echo "Podman extracted: $(which podman 2>/dev/null || echo not found)"
-            else
-              echo "Podman download failed"
+            # Try mirrors in order of expected speed in China
+            MIRRORS="
+              https://mirror.ghproxy.com/https://github.com/mgoltzsche/podman-static/releases/download/v4.7.1/podman-linux-amd64.tar.gz
+              https://ghproxy.net/https://github.com/mgoltzsche/podman-static/releases/download/v4.7.1/podman-linux-amd64.tar.gz
+              https://github.com/mgoltzsche/podman-static/releases/download/v4.7.1/podman-linux-amd64.tar.gz
+            "
+            DOWNLOADED=false
+            for url in $MIRRORS; do
+              echo "  trying: $url"
+              if curl -fsSL --connect-timeout 10 --max-time 120 -o /tmp/podman.tar.gz "$url" 2>&1; then
+                echo "  download OK!"
+                DOWNLOADED=true
+                break
+              fi
+              echo "  failed, trying next..."
+            done
+
+            if [ "$DOWNLOADED" = true ]; then
+              mkdir -p /tmp/podman
+              tar xzf /tmp/podman.tar.gz -C /tmp/podman --strip-components=1 2>/dev/null || \
+                tar xzf /tmp/podman.tar.gz -C /tmp/podman
+              find /tmp/podman -name podman -type f -exec chmod +x {} \;
+              export PATH="/tmp/podman:/tmp/podman/usr/local/bin:$PATH"
+              echo "  podman binary: $(which podman 2>/dev/null || echo NOT FOUND)"
             fi
           fi
 
           if command -v podman >/dev/null 2>&1; then
             echo "=== Podman version ==="
             podman --version
-            echo "RESULT: Podman binary available ✅"
+            podman info 2>&1 | head -10 || true
+            echo "RESULT: Podman ready ✅"
           else
             echo "RESULT: Podman NOT available ❌"
+            exit 1
           fi
 
-      - name: Build and Run with Podman
+      - name: Pull and Run Originsign
         run: |
           set -euo pipefail
-          export PATH="/tmp/podman:$PATH"
+          export PATH="/tmp/podman:/tmp/podman/usr/local/bin:$PATH"
 
-          if ! command -v podman >/dev/null 2>&1; then
-            echo "Podman not available, skipping build test"
-            exit 0
-          fi
+          echo "=== Pulling originsign image ==="
+          podman pull forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
 
-          echo "=== Podman version ==="
-          podman version 2>&1 || true
-          podman info 2>&1 | head -10 || true
+          echo "=== Running originsign container ==="
+          # Start originsign server in background
+          podman run -d --name originsign-server \
+            -p 81:8081 \
+            --privileged \
+            -e AZURE_TENANT_ID="${AZURE_TENANT_ID:-}" \
+            -e AZURE_CLIENT_ID="${AZURE_CLIENT_ID:-}" \
+            -e AZURE_CLIENT_SECRET="${AZURE_CLIENT_SECRET:-}" \
+            forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2 \
+            originsign server
 
-          echo "=== Building test image ==="
-          cat > /tmp/Containerfile <<'EOF'
-          FROM alpine:3.20
-          RUN echo "Podman CI is working!"
-          CMD ["echo", "Hello from Podman CI"]
-          EOF
-          podman build -f /tmp/Containerfile -t podman-test:latest /tmp
+          echo "=== Waiting for originsign server ==="
+          for i in $(seq 1 10); do
+            if curl -s http://localhost:81/v1/sign/digest -o /dev/null -w "%{http_code}" 2>/dev/null | grep -q 200; then
+              echo "  server is up!"
+              break
+            fi
+            echo "  waiting..."
+            sleep 2
+          done
 
-          echo "=== Running test container ==="
-          podman run --rm podman-test:latest
+          echo "=== Test: sign a digest ==="
+          # Quick smoke test - sign a test digest
+          curl -s -X POST http://localhost:81/v1/sign/digest \
+            -H "Content-Type: application/json" \
+            -d '{"base_config":{"algo":"rsa","kms":"local","flow":"sigstore","sys":"pki"},"digest":"Hello from GitCode CI","key_id":"test-key"}' 2>&1 || true
 
           echo "=== Cleanup ==="
-          podman rmi podman-test:latest || true
-          echo "RESULT: Podman build+run works! ✅"
+          podman stop originsign-server || true
+          podman rm originsign-server || true
+
+          echo "RESULT: Podman pull+run works! ✅"
