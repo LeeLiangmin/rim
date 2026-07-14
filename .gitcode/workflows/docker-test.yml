@@ -30,6 +30,11 @@ jobs:
           originsign keygen --algo rsa
           originsign import --kms local --algo rsa --priv rsa-priv-key.pem --pub rsa-pub-key.pem
 
+          echo "=== Start originsign server ==="
+          nohup originsign server > /tmp/originsign.log 2>&1 &
+          sleep 3
+          curl -s -o /dev/null http://localhost:8081 && echo "  server OK" || echo "  server FAIL"
+
           echo "=== Tools ready ==="
 
       - name: Sign hope.exe
@@ -39,25 +44,28 @@ jobs:
           export OBS_AK_XUANWU_RUST OBS_SK_XUANWU_RUST
           export PATH="/tmp/originsign:/tmp/osslsigncode:$PATH"
 
+          # Ensure server is running (step can re-use from setup)
+          if ! curl -s http://localhost:8081 > /dev/null 2>&1; then
+            echo "  restarting server..."
+            nohup originsign server > /tmp/originsign.log 2>&1 &
+            sleep 3
+          fi
+
           echo "=== Download hope.exe from OBS ==="
           echo "aW1wb3J0IGhhc2hsaWIsIGhtYWMsIGRhdGV0aW1lLCB1cmxsaWIucGFyc2UsIG9zLCBzeXMKb2JqID0gc3lzLmFyZ3ZbMV0gaWYgbGVuKHN5cy5hcmd2KSA+IDEgZWxzZSAnZGlzdC9ob3BlLmV4ZScKYWsgPSBvcy5lbnZpcm9uWydPQlNfQUtfWFVBTldVX1JVU1QnXTsgc2sgPSBvcy5lbnZpcm9uWydPQlNfU0tfWFVBTldVX1JVU1QnXQpidWNrZXQ9J3h1YW53dS1ydXN0JzsgcmVnaW9uPSdjbi1ub3J0aC00Jwp0PWRhdGV0aW1lLmRhdGV0aW1lLnV0Y25vdygpOyBkcz10LnN0cmZ0aW1lKCclWSVtJWQnKTsgYW16X2RhdGU9dC5zdHJmdGltZSgnJVklbSVkVCVIJU0lU1onKQpjcmVkPWFrKycvJytkcysnLycrcmVnaW9uKycvczMvYXdzNF9yZXF1ZXN0JzsgcWg9J2hvc3QnCnFhPSdYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1Nic7IHFjPSdYLUFtei1DcmVkZW50aWFsPScrdXJsbGliLnBhcnNlLnF1b3RlKGNyZWQsc2FmZT0nJykKcWQ9J1gtQW16LURhdGU9JythbXpfZGF0ZTsgcWU9J1gtQW16LUV4cGlyZXM9MzYwMCc7IHFzPSdYLUFtei1TaWduZWRIZWFkZXJzPScrcWgKY2Fub25fcXM9cWErJyYnK3FjKycmJytxZCsnJicrcWUrJyYnK3FzCmNhbm9uPSdHRVRcbi8nK29iaisnXG4nK2Nhbm9uX3FzKydcbmhvc3Q6JytidWNrZXQrJy5vYnMuJytyZWdpb24rJy5teWh1YXdlaWNsb3VkLmNvbVxuXG4nK3FoKydcblVOU0lHTkVELVBBWUxPQUQnCnNjb3BlPWRzKycvJytyZWdpb24rJy9zMy9hd3M0X3JlcXVlc3QnCnN0cz0nQVdTNC1ITUFDLVNIQTI1NlxuJythbXpfZGF0ZSsnXG4nK3Njb3BlKydcbicraGFzaGxpYi5zaGEyNTYoY2Fub24uZW5jb2RlKCkpLmhleGRpZ2VzdCgpCmRlZiBzaWduKGssbSk6IHJldHVybiBobWFjLm5ldyhrLG0uZW5jb2RlKCksaGFzaGxpYi5zaGEyNTYpLmRpZ2VzdCgpCnNrYj0oJ0FXUzQnK3NrKS5lbmNvZGUoKTsgaz1zaWduKHNpZ24oc2lnbihzaWduKHNrYixkcykscmVnaW9uKSwnczMnKSwnYXdzNF9yZXF1ZXN0JykKc2lnPWhtYWMubmV3KGssc3RzLmVuY29kZSgpLGhhc2hsaWIuc2hhMjU2KS5oZXhkaWdlc3QoKQpwcmludCgnaHR0cHM6Ly8nK2J1Y2tldCsnLm9icy4nK3JlZ2lvbisnLm15aHVhd2VpY2xvdWQuY29tLycrb2JqKyc/JytxYSsnJicrcWMrJyYnK3FkKycmJytxZSsnJicrcXMrJyZYLUFtei1TaWduYXR1cmU9JytzaWcpCg==" | base64 -d > /tmp/obs-sign-hope.py
           HOPE_URL=$(python3 /tmp/obs-sign-hope.py)
           curl -fsSL --connect-timeout 10 --max-time 60 -o /tmp/hope.exe "$HOPE_URL" 2>&1
           echo "  hope.exe: $(ls -la /tmp/hope.exe)"
-          echo "  sha256: $(sha256sum /tmp/hope.exe | cut -d' ' -f1)"
 
           echo "=== Sign hope.exe ==="
           bash .gitcode/scripts/sign-pe-originsign.sh /tmp/hope.exe /tmp/hope-signed.exe
 
-          echo "=== Verify signed file ==="
-          if [ -f /tmp/hope-signed.exe ]; then
-            ls -la /tmp/hope-signed.exe
-            osslsigncode verify /tmp/hope-signed.exe 2>&1 || true
-          fi
+          echo "=== Verify ==="
+          ls -la /tmp/hope-signed.exe
+          osslsigncode verify /tmp/hope-signed.exe 2>&1 | grep -E "Succeeded|digest|Message" || true
 
-          echo "=== Cleanup ==="
-          pkill originsign 2>/dev/null || true
-          echo "=== Pipeline complete ==="
+      - name: Cleanup server
+        run: pkill originsign 2>/dev/null; echo "server stopped"
 
       - name: Upload signed file to release
         run: |
