@@ -52,9 +52,10 @@ jobs:
           WHOAMI=$(whoami)
           echo "  running as: $WHOAMI (uid=$(id -u))"
 
-          # Check for sudo
-          if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-            echo "  starting dockerd via sudo..."
+          # Try sudo directly, then fallback to non-root
+          DOCKERD_STARTED=false
+          if command -v sudo >/dev/null 2>&1; then
+            echo "  trying sudo dockerd..."
             sudo "$DOCKER_DIR/dockerd" \
               --data-root "$DOCKER_DATA" \
               --iptables=false \
@@ -64,10 +65,19 @@ jobs:
               --pidfile=/tmp/docker.pid \
               --log-level=warn \
               > /tmp/dockerd.log 2>&1 &
-          else
-            echo "  no sudo, trying direct (rootless fallback)..."
-            # Try rootless: dockerd-rootless-setuptool.sh would be ideal,
-            # but it's not in the static tarball. Just try raw dockerd.
+            DOCKERD_PID=$!
+            sleep 1
+            if kill -0 $DOCKERD_PID 2>/dev/null; then
+              echo "  sudo dockerd started (pid=$DOCKERD_PID)"
+              DOCKERD_STARTED=true
+            else
+              echo "  sudo failed, checking log..."
+              cat /tmp/dockerd.log 2>/dev/null || true
+            fi
+          fi
+
+          if [ "$DOCKERD_STARTED" = false ]; then
+            echo "  trying rootless dockerd (will likely fail without rootlesskit)..."
             "$DOCKER_DIR/dockerd" \
               --data-root "$DOCKER_DATA" \
               --iptables=false \
@@ -77,6 +87,12 @@ jobs:
               --pidfile=/tmp/docker.pid \
               --log-level=warn \
               > /tmp/dockerd.log 2>&1 &
+            DOCKERD_PID=$!
+            sleep 1
+            if kill -0 $DOCKERD_PID 2>/dev/null; then
+              echo "  rootless dockerd started (pid=$DOCKERD_PID)"
+              DOCKERD_STARTED=true
+            fi
           fi
 
           # Wait for dockerd to be ready
