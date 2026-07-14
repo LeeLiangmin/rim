@@ -23,11 +23,15 @@ jobs:
 
           echo "=== OS detection ==="
           cat /etc/os-release 2>/dev/null || true
-          echo "  kernel: $(uname -r)"
-          echo "  arch: $(uname -m)"
 
-          echo "=== Current yum repos ==="
-          ls -la /etc/yum.repos.d/ 2>/dev/null || echo "  (empty or missing)"
+          echo "=== Existing yum repos ==="
+          ls -la /etc/yum.repos.d/ 2>/dev/null || true
+          for f in /etc/yum.repos.d/*.repo; do
+            if [ -f "$f" ]; then
+              echo "--- $f ---"
+              cat "$f"
+            fi
+          done
 
           echo "=== Fix yum shebang: find python3.7 ==="
           PY37_BIN=""
@@ -43,85 +47,44 @@ jobs:
             exit 1
           fi
 
-          echo "=== Configure yum repos ==="
-          # EulerOS 2.10 is based on CentOS 7/RHEL 7.
-          # Try Huawei Cloud mirrors first, then fallback to others.
-          cat > /etc/yum.repos.d/euleros.repo <<'REPOEOF'
-          [base]
-          name=EulerOS-2.10-base
-          baseurl=https://mirrors.huaweicloud.com/euler/2.10/os/x86_64/
-          enabled=1
-          gpgcheck=0
-
-          [updates]
-          name=EulerOS-2.10-updates
-          baseurl=https://mirrors.huaweicloud.com/euler/2.10/updates/x86_64/
-          enabled=1
-          gpgcheck=0
-
-          [extras]
-          name=EulerOS-2.10-extras
-          baseurl=https://mirrors.huaweicloud.com/euler/2.10/extras/x86_64/
-          enabled=1
-          gpgcheck=0
-          REPOEOF
-
-          echo "=== Test yum with new repos ==="
+          echo "=== Test yum with existing repos ==="
           if $PY37_BIN /bin/yum repolist 2>&1; then
-            echo "  yum repos are working!"
+            echo "  existing repos are working!"
           else
-            echo "  Huawei EulerOS mirrors failed, trying CentOS mirrors..."
-            cat > /etc/yum.repos.d/centos.repo <<'REPOEOF'
-            [base]
-            name=CentOS-7-base
-            baseurl=https://mirrors.huaweicloud.com/centos/7/os/x86_64/
-            enabled=1
-            gpgcheck=0
-
-            [updates]
-            name=CentOS-7-updates
-            baseurl=https://mirrors.huaweicloud.com/centos/7/updates/x86_64/
-            enabled=1
-            gpgcheck=0
-
-            [extras]
-            name=CentOS-7-extras
-            baseurl=https://mirrors.huaweicloud.com/centos/7/extras/x86_64/
-            enabled=1
-            gpgcheck=0
-
-            [epel]
-            name=EPEL-7
-            baseurl=https://mirrors.huaweicloud.com/epel/7/x86_64/
-            enabled=1
-            gpgcheck=0
-            REPOEOF
-
-            if $PY37_BIN /bin/yum repolist 2>&1; then
-              echo "  CentOS mirrors are working!"
-            else
-              echo "  ERROR: all repo mirrors failed, cannot install Docker"
-              exit 1
+            echo "  existing repos not working, trying to override..."
+            # Try to write repo via sudo, or into an alternative location
+            if command -v sudo >/dev/null 2>&1; then
+              sudo bash -c "cat > /etc/yum.repos.d/euleros.repo" <<'REPOEOF'
+[base]
+name=EulerOS-2.0-base
+baseurl=https://mirrors.huaweicloud.com/euler/2.10/os/x86_64/
+enabled=1
+gpgcheck=0
+REPOEOF
+              $PY37_BIN /bin/yum repolist 2>&1 || true
             fi
+
+            echo "  also trying existing repo directly..."
+            $PY37_BIN /bin/yum --disablerepo='*' --enablerepo='base' repolist 2>&1 || true
           fi
 
           echo "=== Install Docker ==="
-          $PY37_BIN /bin/yum install -y docker docker-engine 2>&1 || {
-            echo "  yum install docker failed, trying docker-ce..."
-            # Try docker-ce repo
-            cat > /etc/yum.repos.d/docker-ce.repo <<'REPOEOF'
-            [docker-ce-stable]
-            name=Docker CE Stable
-            baseurl=https://mirrors.huaweicloud.com/docker-ce/linux/centos/7/x86_64/stable/
-            enabled=1
-            gpgcheck=0
-            REPOEOF
-            $PY37_BIN /bin/yum install -y docker-ce docker-ce-cli containerd.io 2>&1
-          }
+          if $PY37_BIN /bin/yum install -y docker docker-engine 2>&1; then
+            echo "  docker installed via yum"
+          else
+            echo "  yum install failed, trying rpm direct download..."
+            # Direct download docker RPMs as fallback
+            DOCKER_RPM="https://mirrors.huaweicloud.com/docker-ce/linux/centos/7/x86_64/stable/Packages/docker-ce-24.0.7-1.el7.x86_64.rpm"
+            curl -fsSL -o /tmp/docker.rpm "$DOCKER_RPM" 2>&1 && {
+              rpm -ivh /tmp/docker.rpm 2>&1 || true
+            }
+          fi
 
           if command -v docker >/dev/null 2>&1; then
             echo "=== Docker installed successfully: $(docker --version) ==="
           else
+            echo "=== TIP: docker binary not found, but check dockerd ==="
+            ls /usr/bin/docker* 2>/dev/null || echo "  no docker binaries found"
             echo "=== ERROR: Docker still not available ==="
             exit 1
           fi
