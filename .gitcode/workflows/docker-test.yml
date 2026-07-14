@@ -11,11 +11,32 @@ jobs:
     runs-on: euleros-2.10.1
     steps:
       - uses: checkout-action@0.0.1
+      - name: Install Docker
+        run: |
+          set -euo pipefail
+          echo "=== Check if Docker is already installed ==="
+          if command -v docker >/dev/null 2>&1; then
+            echo "Docker already installed: $(docker --version)"
+            exit 0
+          fi
+          echo "=== Installing Docker via yum ==="
+          yum install -y docker docker-engine 2>&1 || \
+            dnf install -y docker docker-engine 2>&1 || \
+            echo "WARNING: yum/dnf install failed, trying alternative methods"
+
+          # Verify installation
+          if command -v docker >/dev/null 2>&1; then
+            echo "Docker installed successfully: $(docker --version)"
+          else
+            echo "ERROR: Docker still not available after install attempt"
+          fi
       - name: Build the Docker image
         run: |
           set -euo pipefail
           echo "=== Docker version ==="
           docker version 2>&1 || true
+          echo "=== Docker info ==="
+          docker info 2>&1 | head -5 || true
           echo "=== Building test image ==="
           mkdir -p /tmp/docker-test
           cat > /tmp/docker-test/Dockerfile <<'EOF'
