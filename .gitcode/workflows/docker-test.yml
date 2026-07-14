@@ -60,12 +60,16 @@ jobs:
             PODMAN_SIGNED_URL=""
             if [ -n "${OBS_AK_XUANWU_RUST:-}" ] && [ -n "${OBS_SK_XUANWU_RUST:-}" ]; then
               echo "  generating signed OBS URL..."
-              echo "  python3: $(which python3 || echo NOT_FOUND)"
-              echo "  base64: $(which base64 || echo NOT_FOUND)"
-              echo "aW1wb3J0IGhhc2hsaWIsIGhtYWMsIGRhdGV0aW1lLCB1cmxsaWIucGFyc2UsIG9zCmFrID0gb3MuZW52aXJvblsnT0JTX0FLJ10Kc2sgPSBvcy5lbnZpcm9uWydPQlNfU0snXQpidWNrZXQgPSAneHVhbnd1LXJ1c3QnCnJlZ2lvbiA9ICdjbi1ub3J0aC00JwpvYmogPSAnZGlzdC9wb2RtYW4tbGludXgtYW1kNjQudGFyLmd6JwoKdCA9IGRhdGV0aW1lLmRhdGV0aW1lLnV0Y25vdygpCmRzID0gdC5zdHJmdGltZSgnJVklbSVkJykKYW16X2RhdGUgPSB0LnN0cmZ0aW1lKCclWSVtJWRUJUglTSVTWicpCmNyZWQgPSBhayArICcvJyArIGRzICsgJy8nICsgcmVnaW9uICsgJy9zMy9hd3M0X3JlcXVlc3QnCgpjYW5vbl9yZXEgPSAnR0VUXG4vJyArIG9iaiArICdcblxuaG9zdDonICsgYnVja2V0ICsgJy5vYnMuJyArIHJlZ2lvbiArICcubXlodWF3ZWljbG91ZC5jb21cblxuaG9zdFxuVU5TSUdORUQtUEFZTE9BRCcKc3RzID0gJ0FXUzQtSE1BQy1TSEEyNTZcbicgKyBhbXpfZGF0ZSArICdcbicgKyBkcyArICcvJyArIHJlZ2lvbiArICcvczMvYXdzNF9yZXF1ZXN0XG4nICsgaGFzaGxpYi5zaGEyNTYoY2Fub25fcmVxLmVuY29kZSgpKS5oZXhkaWdlc3QoKQoKZGVmIHNpZ24oaywgbSk6CiAgICByZXR1cm4gaG1hYy5uZXcoaywgbS5lbmNvZGUoKSwgaGFzaGxpYi5zaGEyNTYpLmRpZ2VzdCgpCgpza19ieXRlcyA9ICgnQVdTNCcgKyBzaykuZW5jb2RlKCkKayA9IHNpZ24oc2lnbihzaWduKHNpZ24oc2tfYnl0ZXMsIGRzKSwgcmVnaW9uKSwgJ3MzJyksICdhd3M0X3JlcXVlc3QnKQpzaWcgPSBobWFjLm5ldyhrLCBzdHMuZW5jb2RlKCksIGhhc2hsaWIuc2hhMjU2KS5oZXhkaWdlc3QoKQoKdXJsID0gJ2h0dHBzOi8vJyArIGJ1Y2tldCArICcub2JzLicgKyByZWdpb24gKyAnLm15aHVhd2VpY2xvdWQuY29tLycgKyBvYmoKdXJsICs9ICc/WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYnCnVybCArPSAnJlgtQW16LUNyZWRlbnRpYWw9JyArIHVybGxpYi5wYXJzZS5xdW90ZShjcmVkKQp1cmwgKz0gJyZYLUFtei1EYXRlPScgKyBhbXpfZGF0ZQp1cmwgKz0gJyZYLUFtei1FeHBpcmVzPTM2MDAnCnVybCArPSAnJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCcKdXJsICs9ICcmWC1BbXotU2lnbmF0dXJlPScgKyBzaWcKcHJpbnQodXJsKQo=" | base64 -d > /tmp/obs-sign.py
+              # base64 may not exist on EulerOS; use python3 to decode
+              python3 -c "
+import base64, sys
+data = 'aW1wb3J0IGhhc2hsaWIsIGhtYWMsIGRhdGV0aW1lLCB1cmxsaWIucGFyc2UsIG9zCmFrID0gb3MuZW52aXJvblsnT0JTX0FLJ10Kc2sgPSBvcy5lbnZpcm9uWydPQlNfU0snXQpidWNrZXQgPSAneHVhbnd1LXJ1c3QnCnJlZ2lvbiA9ICdjbi1ub3J0aC00JwpvYmogPSAnZGlzdC9wb2RtYW4tbGludXgtYW1kNjQudGFyLmd6JwoKdCA9IGRhdGV0aW1lLmRhdGV0aW1lLnV0Y25vdygpCmRzID0gdC5zdHJmdGltZSgnJVklbSVkJykKYW16X2RhdGUgPSB0LnN0cmZ0aW1lKCclWSVtJWRUJUglTSVTWicpCmNyZWQgPSBhayArICcvJyArIGRzICsgJy8nICsgcmVnaW9uICsgJy9zMy9hd3M0X3JlcXVlc3QnCgpjYW5vbl9yZXEgPSAnR0VUXG4vJyArIG9iaiArICdcblxuaG9zdDonICsgYnVja2V0ICsgJy5vYnMuJyArIHJlZ2lvbiArICcubXlodWF3ZWljbG91ZC5jb21cblxuaG9zdFxuVU5TSUdORUQtUEFZTE9BRCcKc3RzID0gJ0FXUzQtSE1BQy1TSEEyNTZcbicgKyBhbXpfZGF0ZSArICdcbicgKyBkcyArICcvJyArIHJlZ2lvbiArICcvczMvYXdzNF9yZXF1ZXN0XG4nICsgaGFzaGxpYi5zaGEyNTYoY2Fub25fcmVxLmVuY29kZSgpKS5oZXhkaWdlc3QoKQoKZGVmIHNpZ24oaywgbSk6CiAgICByZXR1cm4gaG1hYy5uZXcoaywgbS5lbmNvZGUoKSwgaGFzaGxpYi5zaGEyNTYpLmRpZ2VzdCgpCgpza19ieXRlcyA9ICgnQVdTNCcgKyBzaykuZW5jb2RlKCkKayA9IHNpZ24oc2lnbihzaWduKHNpZ24oc2tfYnl0ZXMsIGRzKSwgcmVnaW9uKSwgJ3MzJyksICdhd3M0X3JlcXVlc3QnKQpzaWcgPSBobWFjLm5ldyhrLCBzdHMuZW5jb2RlKCksIGhhc2hsaWIuc2hhMjU2KS5oZXhkaWdlc3QoKQoKdXJsID0gJ2h0dHBzOi8vJyArIGJ1Y2tldCArICcub2JzLicgKyByZWdpb24gKyAnLm15aHVhd2VpY2xvdWQuY29tLycgKyBvYmoKdXJsICs9ICc/WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYnCnVybCArPSAnJlgtQW16LUNyZWRlbnRpYWw9JyArIHVybGxpYi5wYXJzZS5xdW90ZShjcmVkKQp1cmwgKz0gJyZYLUFtei1EYXRlPScgKyBhbXpfZGF0ZQp1cmwgKz0gJyZYLUFtei1FeHBpcmVzPTM2MDAnCnVybCArPSAnJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCcKdXJsICs9ICcmWC1BbXotU2lnbmF0dXJlPScgKyBzaWcKcHJpbnQodXJsKQo='
+with open('/tmp/obs-sign.py', 'w') as f:
+    f.write(base64.b64decode(data).decode())
+" 2>&1 || { echo "  ERROR: failed to decode obs-sign script"; }
               export OBS_AK="$OBS_AK_XUANWU_RUST"
               export OBS_SK="$OBS_SK_XUANWU_RUST"
-              PODMAN_SIGNED_URL=$(python3 /tmp/obs-sign.py)
+              PODMAN_SIGNED_URL=$(python3 /tmp/obs-sign.py 2>&1)
               echo "  signed URL: ${PODMAN_SIGNED_URL:0:80}..."
             fi
 
