@@ -49,44 +49,11 @@ jobs:
           # Fallback: download static binary from OBS (signed URL)
           if ! command -v podman >/dev/null 2>&1; then
             echo "=== Downloading Podman static binary ==="
-            # Source OBS credentials from .env
             source repo_workspace/.gitcode/.env 2>/dev/null || true
             PODMAN_SIGNED_URL=""
             if [ -n "${OBS_AK_XUANWU_RUST:-}" ] && [ -n "${OBS_SK_XUANWU_RUST:-}" ]; then
               echo "  generating signed OBS URL..."
-              # Write signing script to a temp file (avoid YAML multiline hell)
-              cat > /tmp/obs-sign.py << 'PYEOF'
-import hashlib, hmac, datetime, urllib.parse, sys, os
-ak = os.environ['OBS_AK']
-sk = os.environ['OBS_SK']
-bucket = 'xuanwu-rust'
-region = 'cn-north-4'
-obj = 'dist/podman-linux-amd64.tar.gz'
-expires = 3600
-
-t = datetime.datetime.utcnow()
-ds = t.strftime('%Y%m%d')
-amz_date = t.strftime('%Y%m%dT%H%M%SZ')
-cred = ak + '/' + ds + '/' + region + '/s3/aws4_request'
-
-canon_req = 'GET\n/' + obj + '\n\nhost:' + bucket + '.obs.' + region + '.myhuaweicloud.com\n\nhost\nUNSIGNED-PAYLOAD'
-sts = 'AWS4-HMAC-SHA256\n' + amz_date + '\n' + ds + '/' + region + '/s3/aws4_request\n' + hashlib.sha256(canon_req.encode()).hexdigest()
-
-def sign(k, m):
-    return hmac.new(k, m.encode(), hashlib.sha256).digest()
-
-k = sign(sign(sign(sign(('AWS4' + sk).encode(), ds), region), 's3'), 'aws4_request')
-sig = hmac.new(k, sts.encode(), hashlib.sha256).hexdigest()
-
-url = 'https://' + bucket + '.obs.' + region + '.myhuaweicloud.com/' + obj
-url += '?X-Amz-Algorithm=AWS4-HMAC-SHA256'
-url += '&X-Amz-Credential=' + urllib.parse.quote(cred)
-url += '&X-Amz-Date=' + amz_date
-url += '&X-Amz-Expires=' + str(expires)
-url += '&X-Amz-SignedHeaders=host'
-url += '&X-Amz-Signature=' + sig
-print(url)
-PYEOF
+              echo "aW1wb3J0IGhhc2hsaWIsIGhtYWMsIGRhdGV0aW1lLCB1cmxsaWIucGFyc2UsIG9zCmFrID0gb3MuZW52aXJvblsnT0JTX0FLJ10Kc2sgPSBvcy5lbnZpcm9uWydPQlNfU0snXQpidWNrZXQgPSAneHVhbnd1LXJ1c3QnCnJlZ2lvbiA9ICdjbi1ub3J0aC00JwpvYmogPSAnZGlzdC9wb2RtYW4tbGludXgtYW1kNjQudGFyLmd6JwoKdCA9IGRhdGV0aW1lLmRhdGV0aW1lLnV0Y25vdygpCmRzID0gdC5zdHJmdGltZSgnJVklbSVkJykKYW16X2RhdGUgPSB0LnN0cmZ0aW1lKCclWSVtJWRUJUglTSVTWicpCmNyZWQgPSBhayArICcvJyArIGRzICsgJy8nICsgcmVnaW9uICsgJy9zMy9hd3M0X3JlcXVlc3QnCgpjYW5vbl9yZXEgPSAnR0VUXG4vJyArIG9iaiArICdcblxuaG9zdDonICsgYnVja2V0ICsgJy5vYnMuJyArIHJlZ2lvbiArICcubXlodWF3ZWljbG91ZC5jb21cblxuaG9zdFxuVU5TSUdORUQtUEFZTE9BRCcKc3RzID0gJ0FXUzQtSE1BQy1TSEEyNTZcbicgKyBhbXpfZGF0ZSArICdcbicgKyBkcyArICcvJyArIHJlZ2lvbiArICcvczMvYXdzNF9yZXF1ZXN0XG4nICsgaGFzaGxpYi5zaGEyNTYoY2Fub25fcmVxLmVuY29kZSgpKS5oZXhkaWdlc3QoKQoKZGVmIHNpZ24oaywgbSk6CiAgICByZXR1cm4gaG1hYy5uZXcoaywgbS5lbmNvZGUoKSwgaGFzaGxpYi5zaGEyNTYpLmRpZ2VzdCgpCgpza19ieXRlcyA9ICgnQVdTNCcgKyBzaykuZW5jb2RlKCkKayA9IHNpZ24oc2lnbihzaWduKHNpZ24oc2tfYnl0ZXMsIGRzKSwgcmVnaW9uKSwgJ3MzJyksICdhd3M0X3JlcXVlc3QnKQpzaWcgPSBobWFjLm5ldyhrLCBzdHMuZW5jb2RlKCksIGhhc2hsaWIuc2hhMjU2KS5oZXhkaWdlc3QoKQoKdXJsID0gJ2h0dHBzOi8vJyArIGJ1Y2tldCArICcub2JzLicgKyByZWdpb24gKyAnLm15aHVhd2VpY2xvdWQuY29tLycgKyBvYmoKdXJsICs9ICc/WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYnCnVybCArPSAnJlgtQW16LUNyZWRlbnRpYWw9JyArIHVybGxpYi5wYXJzZS5xdW90ZShjcmVkKQp1cmwgKz0gJyZYLUFtei1EYXRlPScgKyBhbXpfZGF0ZQp1cmwgKz0gJyZYLUFtei1FeHBpcmVzPTM2MDAnCnVybCArPSAnJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCcKdXJsICs9ICcmWC1BbXotU2lnbmF0dXJlPScgKyBzaWcKcHJpbnQodXJsKQo=" | base64 -d > /tmp/obs-sign.py
               export OBS_AK="$OBS_AK_XUANWU_RUST"
               export OBS_SK="$OBS_SK_XUANWU_RUST"
               PODMAN_SIGNED_URL=$(python3 /tmp/obs-sign.py 2>/dev/null)
