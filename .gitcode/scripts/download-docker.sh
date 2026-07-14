@@ -60,9 +60,12 @@ else
 fi
 
 echo "=== Extracting ==="
-tar xzf "$DEST_TGZ" -C "$DEST_DIR"
+tar xzf "$DEST_TGZ" -C /tmp  # Docker.tgz contains ./docker/ dir
 chmod +x "$DEST_DIR"/*
-ls "$DEST_DIR"/containerd "$DEST_DIR"/ctr "$DEST_DIR"/runc
+ls "$DEST_DIR"/containerd "$DEST_DIR"/ctr "$DEST_DIR"/runc 2>/dev/null || {
+  echo "  checking for nested dir..."
+  ls /tmp/docker/ 2>/dev/null
+}
 export PATH="$DEST_DIR:$PATH"
 echo "containerd $(containerd --version)"
 echo "ctr $(ctr --version)"
