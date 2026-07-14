@@ -40,24 +40,8 @@ jobs:
           export PATH="/tmp/originsign:/tmp/osslsigncode:$PATH"
 
           echo "=== Download hope.exe from OBS ==="
-          # Generate signed URL for hope.exe
-          HOPE_URL=$(python3 -c "
-import hashlib, hmac, datetime, urllib.parse, os
-ak = os.environ['OBS_AK_XUANWU_RUST']; sk = os.environ['OBS_SK_XUANWU_RUST']
-bucket='xuanwu-rust'; region='cn-north-4'; obj='dist/hope.exe'
-t=datetime.datetime.utcnow(); ds=t.strftime('%Y%m%d'); amz_date=t.strftime('%Y%m%dT%H%M%SZ')
-cred=ak+'/'+ds+'/'+region+'/s3/aws4_request'; qh='host'
-qa='X-Amz-Algorithm=AWS4-HMAC-SHA256'; qc='X-Amz-Credential='+urllib.parse.quote(cred,safe='')
-qd='X-Amz-Date='+amz_date; qe='X-Amz-Expires=3600'; qs='X-Amz-SignedHeaders='+qh
-canon_qs=qa+'&'+qc+'&'+qd+'&'+qe+'&'+qs
-canon='GET\n/'+obj+'\n'+canon_qs+'\nhost:'+bucket+'.obs.'+region+'.myhuaweicloud.com\n\n'+qh+'\nUNSIGNED-PAYLOAD'
-scope=ds+'/'+region+'/s3/aws4_request'
-sts='AWS4-HMAC-SHA256\n'+amz_date+'\n'+scope+'\n'+hashlib.sha256(canon.encode()).hexdigest()
-def sign(k,m): return hmac.new(k,m.encode(),hashlib.sha256).digest()
-skb=('AWS4'+sk).encode(); k=sign(sign(sign(sign(skb,ds),region),'s3'),'aws4_request')
-sig=hmac.new(k,sts.encode(),hashlib.sha256).hexdigest()
-print('https://'+bucket+'.obs.'+region+'.myhuaweicloud.com/'+obj+'?'+qa+'&'+qc+'&'+qd+'&'+qe+'&'+qs+'&X-Amz-Signature='+sig)
-")
+          echo "aW1wb3J0IGhhc2hsaWIsIGhtYWMsIGRhdGV0aW1lLCB1cmxsaWIucGFyc2UsIG9zLCBzeXMKb2JqID0gc3lzLmFyZ3ZbMV0gaWYgbGVuKHN5cy5hcmd2KSA+IDEgZWxzZSAnZGlzdC9ob3BlLmV4ZScKYWsgPSBvcy5lbnZpcm9uWydPQlNfQUtfWFVBTldVX1JVU1QnXTsgc2sgPSBvcy5lbnZpcm9uWydPQlNfU0tfWFVBTldVX1JVU1QnXQpidWNrZXQ9J3h1YW53dS1ydXN0JzsgcmVnaW9uPSdjbi1ub3J0aC00Jwp0PWRhdGV0aW1lLmRhdGV0aW1lLnV0Y25vdygpOyBkcz10LnN0cmZ0aW1lKCclWSVtJWQnKTsgYW16X2RhdGU9dC5zdHJmdGltZSgnJVklbSVkVCVIJU0lU1onKQpjcmVkPWFrKycvJytkcysnLycrcmVnaW9uKycvczMvYXdzNF9yZXF1ZXN0JzsgcWg9J2hvc3QnCnFhPSdYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1Nic7IHFjPSdYLUFtei1DcmVkZW50aWFsPScrdXJsbGliLnBhcnNlLnF1b3RlKGNyZWQsc2FmZT0nJykKcWQ9J1gtQW16LURhdGU9JythbXpfZGF0ZTsgcWU9J1gtQW16LUV4cGlyZXM9MzYwMCc7IHFzPSdYLUFtei1TaWduZWRIZWFkZXJzPScrcWgKY2Fub25fcXM9cWErJyYnK3FjKycmJytxZCsnJicrcWUrJyYnK3FzCmNhbm9uPSdHRVRcbi8nK29iaisnXG4nK2Nhbm9uX3FzKydcbmhvc3Q6JytidWNrZXQrJy5vYnMuJytyZWdpb24rJy5teWh1YXdlaWNsb3VkLmNvbVxuXG4nK3FoKydcblVOU0lHTkVELVBBWUxPQUQnCnNjb3BlPWRzKycvJytyZWdpb24rJy9zMy9hd3M0X3JlcXVlc3QnCnN0cz0nQVdTNC1ITUFDLVNIQTI1NlxuJythbXpfZGF0ZSsnXG4nK3Njb3BlKydcbicraGFzaGxpYi5zaGEyNTYoY2Fub24uZW5jb2RlKCkpLmhleGRpZ2VzdCgpCmRlZiBzaWduKGssbSk6IHJldHVybiBobWFjLm5ldyhrLG0uZW5jb2RlKCksaGFzaGxpYi5zaGEyNTYpLmRpZ2VzdCgpCnNrYj0oJ0FXUzQnK3NrKS5lbmNvZGUoKTsgaz1zaWduKHNpZ24oc2lnbihzaWduKHNrYixkcykscmVnaW9uKSwnczMnKSwnYXdzNF9yZXF1ZXN0JykKc2lnPWhtYWMubmV3KGssc3RzLmVuY29kZSgpLGhhc2hsaWIuc2hhMjU2KS5oZXhkaWdlc3QoKQpwcmludCgnaHR0cHM6Ly8nK2J1Y2tldCsnLm9icy4nK3JlZ2lvbisnLm15aHVhd2VpY2xvdWQuY29tLycrb2JqKyc/JytxYSsnJicrcWMrJyYnK3FkKycmJytxZSsnJicrcXMrJyZYLUFtei1TaWduYXR1cmU9JytzaWcpCg==" | base64 -d > /tmp/obs-sign-hope.py
+          HOPE_URL=$(python3 /tmp/obs-sign-hope.py)
           curl -fsSL --connect-timeout 10 --max-time 60 -o /tmp/hope.exe "$HOPE_URL" 2>&1
           echo "  hope.exe: $(ls -la /tmp/hope.exe)"
           echo "  sha256: $(sha256sum /tmp/hope.exe | cut -d' ' -f1)"
