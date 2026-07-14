@@ -20,17 +20,33 @@ jobs:
 
           echo "=== OS ===" && cat /etc/os-release | head -3 || true
 
-          # Try yum first
-          echo "=== Attempt yum install podman ==="
+          # Try yum/dnf first (EulerOS repos should have podman)
+          echo "=== Attempt yum/dnf install podman ==="
           PY37_BIN=""
           for p in /usr/bin/python3.7 /usr/bin/python37; do
             [ -x "$p" ] && PY37_BIN="$p" && break
           done
           if [ -n "$PY37_BIN" ]; then
+            # Try default repos first
             $PY37_BIN /bin/yum install -y podman 2>&1 && echo "Podman installed via yum!" || true
+            # Fallback: override repo to Huawei mirror
+            if ! command -v podman >/dev/null 2>&1; then
+              echo "  trying with Huawei EulerOS mirror..."
+              $PY37_BIN /bin/yum install -y podman \
+                --setopt="*.baseurl=https://mirrors.huaweicloud.com/euler/2.10/os/x86_64/" \
+                --setopt="*.gpgcheck=0" 2>&1 && echo "Podman installed via Huawei mirror!" || true
+            fi
+            # Fallback: CentOS 7 EPEL mirror (compatible with EulerOS)
+            if ! command -v podman >/dev/null 2>&1; then
+              echo "  trying with CentOS 7 + EPEL mirrors..."
+              $PY37_BIN /bin/yum install -y podman \
+                --setopt="*.baseurl=https://mirrors.huaweicloud.com/centos/7/os/x86_64/" \
+                --setopt="*.gpgcheck=0" \
+                --enablerepo="*" 2>&1 && echo "Podman installed via CentOS mirror!" || true
+            fi
           fi
 
-          # Fallback: download static binary
+          # Fallback: download static binary from OBS
           if ! command -v podman >/dev/null 2>&1; then
             echo "=== Downloading Podman static binary ==="
             # Primary: project OBS mirror (fast on Huawei Cloud)
