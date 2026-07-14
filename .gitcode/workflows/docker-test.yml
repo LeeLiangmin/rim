@@ -11,88 +11,127 @@ jobs:
     runs-on: euleros-2.10.1
     steps:
       - uses: checkout-action@0.0.1
-      - name: Install Docker
+      - name: Setup Docker
         run: |
           set -euo pipefail
 
-          echo "=== Check if Docker is already installed ==="
-          if command -v docker >/dev/null 2>&1; then
-            echo "Docker already installed: $(docker --version)"
-            exit 0
+          DOCKER_DIR="/tmp/docker"
+          export PATH="$DOCKER_DIR:$PATH"
+
+          if command -v docker >/dev/null 2>&1 && command -v dockerd >/dev/null 2>&1; then
+            echo "Docker already available: $(docker --version)"
+          else
+            DOCKER_VERSION="24.0.7"
+            DOCKER_MIRROR="https://mirrors.huaweicloud.com/docker-ce/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz"
+            DOCKER_OFFICIAL="https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz"
+
+            echo "=== Downloading Docker ${DOCKER_VERSION} ==="
+            curl -fsSL --connect-timeout 10 --max-time 300 -o /tmp/docker.tgz "$DOCKER_MIRROR" 2>&1 || \
+              curl -fsSL --connect-timeout 10 --max-time 300 -o /tmp/docker.tgz "$DOCKER_OFFICIAL" 2>&1
+
+            echo "=== Extracting ==="
+            rm -rf "$DOCKER_DIR"
+            tar xzf /tmp/docker.tgz -C /tmp
+            ls -la "$DOCKER_DIR/"
+            echo "  docker:  $($DOCKER_DIR/docker --version)"
+            echo "  dockerd: $($DOCKER_DIR/dockerd --version 2>&1 || true)"
+            echo "  containerd: $(ls $DOCKER_DIR/containerd* 2>/dev/null || echo none)"
           fi
 
-          echo "=== OS: $(cat /etc/os-release 2>/dev/null | head -1 || true) ==="
+          echo "=== Starting dockerd ==="
+          # Kill any existing dockerd
+          pkill dockerd 2>/dev/null || true
+          sleep 1
 
-          echo "=== Fix yum shebang: find python3.7 ==="
-          PY37_BIN=""
-          for p in /usr/bin/python3.7 /usr/bin/python37; do
-            if [ -x "$p" ]; then
-              echo "  found: $p ($($p --version 2>&1))"
-              PY37_BIN="$p"
+          # Data dir in tmp
+          DOCKER_DATA="/tmp/docker-data"
+          rm -rf "$DOCKER_DATA"
+          mkdir -p "$DOCKER_DATA"
+
+          # Check what user we are
+          WHOAMI=$(whoami)
+          echo "  running as: $WHOAMI (uid=$(id -u))"
+
+          # Check for sudo
+          if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            echo "  starting dockerd via sudo..."
+            sudo "$DOCKER_DIR/dockerd" \
+              --data-root "$DOCKER_DATA" \
+              --iptables=false \
+              --ip6tables=false \
+              --bridge=none \
+              --host=unix:///tmp/docker.sock \
+              --pidfile=/tmp/docker.pid \
+              --log-level=warn \
+              > /tmp/dockerd.log 2>&1 &
+          else
+            echo "  no sudo, trying direct (rootless fallback)..."
+            # Try rootless: dockerd-rootless-setuptool.sh would be ideal,
+            # but it's not in the static tarball. Just try raw dockerd.
+            "$DOCKER_DIR/dockerd" \
+              --data-root "$DOCKER_DATA" \
+              --iptables=false \
+              --ip6tables=false \
+              --bridge=none \
+              --host=unix:///tmp/docker.sock \
+              --pidfile=/tmp/docker.pid \
+              --log-level=warn \
+              > /tmp/dockerd.log 2>&1 &
+          fi
+
+          # Wait for dockerd to be ready
+          echo "  waiting for dockerd to start..."
+          export DOCKER_HOST=unix:///tmp/docker.sock
+          for i in $(seq 1 15); do
+            if docker info >/dev/null 2>&1; then
+              echo "  dockerd is ready! (took ${i}s)"
               break
             fi
+            sleep 1
+            echo "  ."
           done
 
-          INSTALL_OK=false
-
-          # Attempt 1: yum install via python3.7 (existing repos)
-          if [ -n "$PY37_BIN" ]; then
-            echo "=== Attempt 1: yum install docker ==="
-            if $PY37_BIN /bin/yum install -y docker docker-engine 2>&1; then
-              INSTALL_OK=true
-            else
-              echo "  yum failed (expected in container), moving on..."
-            fi
-          fi
-
-          # Attempt 2: Docker static binary download
-          if [ "$INSTALL_OK" = false ]; then
-            echo "=== Attempt 2: Docker static binary ==="
-            DOCKER_VERSION="24.0.7"
-            DOCKER_URL="https://mirrors.huaweicloud.com/docker-ce/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz"
-            echo "  downloading from $DOCKER_URL ..."
-            if curl -fsSL --connect-timeout 10 --max-time 300 -o /tmp/docker.tgz "$DOCKER_URL" 2>&1; then
-              echo "  extracting..."
-              tar xzf /tmp/docker.tgz -C /tmp
-              export PATH="/tmp/docker:$PATH"
-              echo "  docker binary: $(which docker)"
-              echo "  version: $(docker --version 2>&1)"
-              INSTALL_OK=true
-            else
-              echo "  download failed, trying official URL..."
-              DOCKER_URL="https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz"
-              if curl -fsSL --connect-timeout 10 --max-time 300 -o /tmp/docker.tgz "$DOCKER_URL" 2>&1; then
-                echo "  extracting..."
-                tar xzf /tmp/docker.tgz -C /tmp
-                export PATH="/tmp/docker:$PATH"
-                echo "  docker binary: $(which docker)"
-                echo "  version: $(docker --version 2>&1)"
-                INSTALL_OK=true
-              fi
-            fi
-          fi
-
-          if command -v docker >/dev/null 2>&1; then
-            echo "=== Docker available: $(docker --version) ==="
+          # Show status
+          echo "=== Dockerd status ==="
+          if docker info >/dev/null 2>&1; then
+            docker info 2>&1 | head -15
           else
-            echo "=== ERROR: Docker not available after all attempts ==="
+            echo "  ERROR: dockerd failed to start"
+            echo "  --- dockerd log ---"
+            cat /tmp/dockerd.log 2>/dev/null || true
+            echo "  --- end log ---"
             exit 1
           fi
-      - name: Build the Docker image
+
+          # Save env for next step
+          echo "DOCKER_HOST=unix:///tmp/docker.sock" > /tmp/docker-env
+          echo "PATH=$DOCKER_DIR:$PATH" >> /tmp/docker-env
+
+      - name: Build and Run Docker image
         run: |
           set -euo pipefail
+
+          # Source env from previous step
+          if [ -f /tmp/docker-env ]; then
+            source /tmp/docker-env
+          fi
+          export DOCKER_HOST="${DOCKER_HOST:-unix:///tmp/docker.sock}"
           export PATH="/tmp/docker:$PATH"
-          echo "=== Docker version ==="
+
+          echo "=== Docker info ==="
           docker version 2>&1 || true
           echo "=== Building test image ==="
-          mkdir -p /tmp/docker-test
-          cat > /tmp/docker-test/Dockerfile <<'DOCKEREOF'
+          mkdir -p /tmp/docker-build
+          cat > /tmp/docker-build/Dockerfile <<'DOCKEREOF'
           FROM alpine:3.20
           RUN echo "Docker CI is working!"
           CMD ["echo", "Hello from Docker Image CI"]
           DOCKEREOF
-          docker build -f /tmp/docker-test/Dockerfile -t my-image-name:$(date +%s) /tmp/docker-test 2>&1 || {
-            echo "=== TIP: docker build failed, but docker CLI works! ==="
-            echo "  You may need to start dockerd first for builds."
-          }
-          echo "=== Test complete ==="
+          docker build -f /tmp/docker-build/Dockerfile -t docker-ci-test:latest /tmp/docker-build
+
+          echo "=== Running test container ==="
+          docker run --rm docker-ci-test:latest
+
+          echo "=== Docker cleanup ==="
+          docker rmi docker-ci-test:latest || true
+          echo "=== Docker pipeline complete! ==="
