@@ -13,137 +13,30 @@ jobs:
       - name: Setup Podman
         run: |
           set -euo pipefail
-
-          if command -v podman >/dev/null 2>&1; then
-            echo "Podman already installed: $(podman --version)"
-            exit 0
-          fi
-
-          echo "=== OS ===" && cat /etc/os-release | head -3 || true
-
-          # Try yum/dnf first (EulerOS repos should have podman)
-          echo "=== Attempt yum/dnf install podman ==="
-          PY37_BIN=""
-          for p in /usr/bin/python3.7 /usr/bin/python37; do
-            [ -x "$p" ] && PY37_BIN="$p" && break
-          done
-          if [ -n "$PY37_BIN" ]; then
-            # Try default repos first
-            $PY37_BIN /bin/yum install -y podman 2>&1 && echo "Podman installed via yum!" || true
-            # Fallback: override repo to Huawei mirror
-            if ! command -v podman >/dev/null 2>&1; then
-              echo "  trying with Huawei EulerOS mirror..."
-              $PY37_BIN /bin/yum install -y podman \
-                --setopt="*.baseurl=https://mirrors.huaweicloud.com/euler/2.10/os/x86_64/" \
-                --setopt="*.gpgcheck=0" 2>&1 && echo "Podman installed via Huawei mirror!" || true
-            fi
-            # Fallback: CentOS 7 EPEL mirror (compatible with EulerOS)
-            if ! command -v podman >/dev/null 2>&1; then
-              echo "  trying with CentOS 7 + EPEL mirrors..."
-              $PY37_BIN /bin/yum install -y podman \
-                --setopt="*.baseurl=https://mirrors.huaweicloud.com/centos/7/os/x86_64/" \
-                --setopt="*.gpgcheck=0" \
-                --enablerepo="*" 2>&1 && echo "Podman installed via CentOS mirror!" || true
-            fi
-          fi
-
-          # Fallback: download static binary from OBS (signed URL)
-          if ! command -v podman >/dev/null 2>&1; then
-            echo "=== Downloading Podman static binary ==="
-            # .env is in repo_workspace/ (CWD is workspace root)
-            if [ -f repo_workspace/.gitcode/.env ]; then
-              echo "  loading repo_workspace/.gitcode/.env"
-              . repo_workspace/.gitcode/.env
-            fi
-            echo "  OBS_AK set: ${OBS_AK_XUANWU_RUST:+yes}"
-            echo "  OBS_SK set: ${OBS_SK_XUANWU_RUST:+yes}"
-            PODMAN_SIGNED_URL=""
-            if [ -n "${OBS_AK_XUANWU_RUST:-}" ] && [ -n "${OBS_SK_XUANWU_RUST:-}" ]; then
-              echo "  generating signed OBS URL..."
-              # base64 may not exist on EulerOS; use python3 to decode
-              python3 -c "
-import base64, sys
-data = 'aW1wb3J0IGhhc2hsaWIsIGhtYWMsIGRhdGV0aW1lLCB1cmxsaWIucGFyc2UsIG9zCmFrID0gb3MuZW52aXJvblsnT0JTX0FLJ10Kc2sgPSBvcy5lbnZpcm9uWydPQlNfU0snXQpidWNrZXQgPSAneHVhbnd1LXJ1c3QnCnJlZ2lvbiA9ICdjbi1ub3J0aC00JwpvYmogPSAnZGlzdC9wb2RtYW4tbGludXgtYW1kNjQudGFyLmd6JwoKdCA9IGRhdGV0aW1lLmRhdGV0aW1lLnV0Y25vdygpCmRzID0gdC5zdHJmdGltZSgnJVklbSVkJykKYW16X2RhdGUgPSB0LnN0cmZ0aW1lKCclWSVtJWRUJUglTSVTWicpCmNyZWQgPSBhayArICcvJyArIGRzICsgJy8nICsgcmVnaW9uICsgJy9zMy9hd3M0X3JlcXVlc3QnCgpjYW5vbl9yZXEgPSAnR0VUXG4vJyArIG9iaiArICdcblxuaG9zdDonICsgYnVja2V0ICsgJy5vYnMuJyArIHJlZ2lvbiArICcubXlodWF3ZWljbG91ZC5jb21cblxuaG9zdFxuVU5TSUdORUQtUEFZTE9BRCcKc3RzID0gJ0FXUzQtSE1BQy1TSEEyNTZcbicgKyBhbXpfZGF0ZSArICdcbicgKyBkcyArICcvJyArIHJlZ2lvbiArICcvczMvYXdzNF9yZXF1ZXN0XG4nICsgaGFzaGxpYi5zaGEyNTYoY2Fub25fcmVxLmVuY29kZSgpKS5oZXhkaWdlc3QoKQoKZGVmIHNpZ24oaywgbSk6CiAgICByZXR1cm4gaG1hYy5uZXcoaywgbS5lbmNvZGUoKSwgaGFzaGxpYi5zaGEyNTYpLmRpZ2VzdCgpCgpza19ieXRlcyA9ICgnQVdTNCcgKyBzaykuZW5jb2RlKCkKayA9IHNpZ24oc2lnbihzaWduKHNpZ24oc2tfYnl0ZXMsIGRzKSwgcmVnaW9uKSwgJ3MzJyksICdhd3M0X3JlcXVlc3QnKQpzaWcgPSBobWFjLm5ldyhrLCBzdHMuZW5jb2RlKCksIGhhc2hsaWIuc2hhMjU2KS5oZXhkaWdlc3QoKQoKdXJsID0gJ2h0dHBzOi8vJyArIGJ1Y2tldCArICcub2JzLicgKyByZWdpb24gKyAnLm15aHVhd2VpY2xvdWQuY29tLycgKyBvYmoKdXJsICs9ICc/WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYnCnVybCArPSAnJlgtQW16LUNyZWRlbnRpYWw9JyArIHVybGxpYi5wYXJzZS5xdW90ZShjcmVkKQp1cmwgKz0gJyZYLUFtei1EYXRlPScgKyBhbXpfZGF0ZQp1cmwgKz0gJyZYLUFtei1FeHBpcmVzPTM2MDAnCnVybCArPSAnJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCcKdXJsICs9ICcmWC1BbXotU2lnbmF0dXJlPScgKyBzaWcKcHJpbnQodXJsKQo='
-with open('/tmp/obs-sign.py', 'w') as f:
-    f.write(base64.b64decode(data).decode())
-" 2>&1 || { echo "  ERROR: failed to decode obs-sign script"; }
-              export OBS_AK="$OBS_AK_XUANWU_RUST"
-              export OBS_SK="$OBS_SK_XUANWU_RUST"
-              PODMAN_SIGNED_URL=$(python3 /tmp/obs-sign.py 2>&1)
-              echo "  signed URL: ${PODMAN_SIGNED_URL:0:80}..."
-            fi
-
-            MIRRORS="
-              ${PODMAN_SIGNED_URL}
-            "
-            DOWNLOADED=false
-            for url in $MIRRORS; do
-              echo "  trying: $url"
-              if curl -fsSL --connect-timeout 10 --max-time 120 -o /tmp/podman.tar.gz "$url" 2>&1; then
-                echo "  download OK!"
-                DOWNLOADED=true
-                break
-              fi
-              echo "  failed, trying next..."
-            done
-
-            if [ "$DOWNLOADED" = true ]; then
-              mkdir -p /tmp/podman
-              tar xzf /tmp/podman.tar.gz -C /tmp/podman --strip-components=1 2>/dev/null || \
-                tar xzf /tmp/podman.tar.gz -C /tmp/podman
-              find /tmp/podman -name podman -type f -exec chmod +x {} \;
-              export PATH="/tmp/podman:/tmp/podman/usr/local/bin:$PATH"
-              echo "  podman binary: $(which podman 2>/dev/null || echo NOT FOUND)"
-            fi
-          fi
-
-          if command -v podman >/dev/null 2>&1; then
-            echo "=== Podman version ==="
-            podman --version
-            podman info 2>&1 | head -10 || true
-            echo "RESULT: Podman ready ✅"
-          else
-            echo "RESULT: Podman NOT available ❌"
-            exit 1
-          fi
-
+          cd repo_workspace
+          . .gitcode/.env
+          export OBS_AK_XUANWU_RUST OBS_SK_XUANWU_RUST
+          bash .gitcode/scripts/download-podman.sh /tmp/podman
+          export PATH="/tmp/podman:/tmp/podman/usr/local/bin:$PATH"
+          echo "=== Podman ready ==="
+          podman --version
       - name: Pull and Run Originsign
         run: |
           set -euo pipefail
           export PATH="/tmp/podman:/tmp/podman/usr/local/bin:$PATH"
-
           echo "=== Pulling originsign image ==="
           podman pull forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2
-
-          echo "=== Running originsign container ==="
-          # Start originsign server in background
+          echo "=== Running originsign server ==="
           podman run -d --name originsign-server \
-            -p 81:8081 \
-            --privileged \
-            -e AZURE_TENANT_ID="${AZURE_TENANT_ID:-}" \
-            -e AZURE_CLIENT_ID="${AZURE_CLIENT_ID:-}" \
-            -e AZURE_CLIENT_SECRET="${AZURE_CLIENT_SECRET:-}" \
+            -p 81:8081 --privileged \
             forgestash.verify.oepkgs.net/dmgt/originsign:0.0.2 \
             originsign server
-
-          echo "=== Waiting for originsign server ==="
-          for i in $(seq 1 10); do
-            if curl -s http://localhost:81/v1/sign/digest -o /dev/null -w "%{http_code}" 2>/dev/null | grep -q 200; then
-              echo "  server is up!"
-              break
-            fi
-            echo "  waiting..."
-            sleep 2
-          done
-
-          echo "=== Test: sign a digest ==="
-          # Quick smoke test - sign a test digest
-          curl -s -X POST http://localhost:81/v1/sign/digest \
+          echo "=== Test signing API ==="
+          sleep 5
+          curl -s http://localhost:81/v1/sign/digest -X POST \
             -H "Content-Type: application/json" \
-            -d '{"base_config":{"algo":"rsa","kms":"local","flow":"sigstore","sys":"pki"},"digest":"Hello from GitCode CI","key_id":"test-key"}' 2>&1 || true
-
+            -d '{"base_config":{"algo":"rsa","kms":"local","flow":"sigstore","sys":"pki"},"digest":"GitCode CI Test","key_id":"test"}' || true
           echo "=== Cleanup ==="
           podman stop originsign-server || true
           podman rm originsign-server || true
-
-          echo "RESULT: Podman pull+run works! ✅"
+          echo "=== Podman pipeline complete! ==="
