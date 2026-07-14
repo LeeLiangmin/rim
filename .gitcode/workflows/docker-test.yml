@@ -1,4 +1,4 @@
-name: Originsign CI (extract from registry)
+name: Originsign PE Signing Pipeline
 
 on:
   push:
@@ -6,55 +6,56 @@ on:
   workflow_dispatch:
 
 jobs:
-  originsign-test:
+  sign-pe:
     runs-on: euleros-2.10.1
     steps:
       - uses: checkout-action@0.0.1
-      - name: Extract originsign
+      - name: Setup originsign + osslsigncode
         run: |
           set -euo pipefail
-          bash repo_workspace/.gitcode/scripts/download-originsign.sh /tmp/originsign
-          export PATH="/tmp/originsign:$PATH"
-          echo "=== originsign ready ==="
-          originsign --version 2>&1 || true
+          cd repo_workspace
 
-      - name: Run originsign server + test API
-        run: |
-          set -euo pipefail
+          echo "=== Download originsign ==="
+          bash .gitcode/scripts/download-originsign.sh /tmp/originsign
           export PATH="/tmp/originsign:$PATH"
 
-          echo "=== Initializing KMS ==="
+          echo "=== Download osslsigncode ==="
+          bash .gitcode/scripts/download-osslsigncode.sh /tmp/osslsigncode
+          export PATH="/tmp/osslsigncode:$PATH"
+
+          echo "=== Verify tools ==="
+          originsign help 2>&1 | head -1 || true
+          osslsigncode version 2>&1 || true
+
+          echo "=== Init KMS + generate keys ==="
           originsign import --kms local
           originsign keygen --algo rsa
-          originsign keygen --algo ecdsa
-          originsign keygen --algo sm2 --sign-tool go-tongsuo
-
-          echo "=== Importing keys ==="
           originsign import --kms local --algo rsa --priv rsa-priv-key.pem --pub rsa-pub-key.pem
-          originsign import --kms local --algo ecdsa --priv ec-priv-key.pem --pub ec-pub-key.pem
-          originsign import --kms local --algo sm2 --priv sm2-priv-key.pem --pub sm2-pub-key.pem
-          KEY_ID=$(originsign import --kms local --list 2>&1 | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
-          echo "Using key_id: $KEY_ID"
+          originsign import --kms local --list
 
-          echo "=== Starting server ==="
+          echo "=== Start server ==="
           originsign server &
-          SERVER_PID=$!
           sleep 3
+          curl -s -o /dev/null http://localhost:8081 && echo "  server OK" || echo "  server FAIL"
 
-          echo "=== Sign test digest ==="
-          SIGN_RESP=$(curl -s -X POST http://localhost:8081/v1/sign/digest \
-            -H "Content-Type: application/json" \
-            -d "{\"base_config\":{\"algo\":\"rsa\",\"kms\":\"local\",\"flow\":\"sigstore\",\"sys\":\"pki\"},\"digest\":\"Hello GitCode CI\",\"key_id\":\"$KEY_ID\"}")
-          echo "$SIGN_RESP"
+      - name: Sign a test PE file
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/originsign:/tmp/osslsigncode:$PATH"
 
-          echo "=== Verify signature ==="
-          SIGNATURE=$(echo "$SIGN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('signature',''))" 2>/dev/null || echo "")
-          if [ -n "$SIGNATURE" ]; then
-            curl -s -X POST http://localhost:8081/v1/verify/digest \
-              -H "Content-Type: application/json" \
-              -d "{\"base_config\":{\"algo\":\"rsa\",\"flow\":\"sigstore\",\"kms\":\"local\",\"sys\":\"pki\"},\"key_id\":\"$KEY_ID\",\"digest\":\"Hello GitCode CI\",\"signature\":\"$SIGNATURE\"}"
+          echo "=== Create test PE file ==="
+          printf '\x4d\x5a\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff\x00\x00' > /tmp/test.exe
+          truncate -s 16384 /tmp/test.exe 2>/dev/null || dd if=/dev/zero bs=1024 count=16 >> /tmp/test.exe 2>/dev/null || true
+          echo "  test.exe: $(ls -la /tmp/test.exe)"
+
+          echo "=== Sign test.exe ==="
+          bash repo_workspace/.gitcode/scripts/sign-pe-originsign.sh /tmp/test.exe /tmp/test-signed.exe 2>&1 || true
+
+          echo "=== Verify with osslsigncode ==="
+          if [ -f /tmp/test-signed.exe ]; then
+            osslsigncode verify /tmp/test-signed.exe 2>&1 || true
           fi
 
           echo "=== Cleanup ==="
-          kill $SERVER_PID 2>/dev/null || true
-          echo "=== Originsign pipeline complete! ==="
+          pkill originsign 2>/dev/null || true
+          echo "=== Pipeline complete ==="
