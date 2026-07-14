@@ -14,21 +14,63 @@ jobs:
       - name: Install Docker
         run: |
           set -euo pipefail
+
           echo "=== Check if Docker is already installed ==="
           if command -v docker >/dev/null 2>&1; then
             echo "Docker already installed: $(docker --version)"
             exit 0
           fi
-          echo "=== Installing Docker via yum ==="
-          yum install -y docker docker-engine 2>&1 || \
-            dnf install -y docker docker-engine 2>&1 || \
-            echo "WARNING: yum/dnf install failed, trying alternative methods"
 
-          # Verify installation
+          echo "=== Fix yum/dnf python3 shebang ==="
+          # EulerOS runner has broken yum because /usr/bin/python3 is missing.
+          # Try to find a working python3.7 binary and use it to run yum.
+          PY37_BIN=""
+          for p in /usr/bin/python3.7 /usr/bin/python37 /usr/bin/python3; do
+            if [ -x "$p" ]; then
+              echo "  found: $p ($($p --version 2>&1))"
+              PY37_BIN="$p"
+              break
+            fi
+          done
+
+          echo "=== Install Docker ==="
+          INSTALL_OK=false
+
+          # Attempt 1: use discovered python3.x binary directly with yum
+          if [ -n "$PY37_BIN" ]; then
+            echo "  attempt 1: $PY37_BIN /bin/yum install docker"
+            if $PY37_BIN /bin/yum install -y docker docker-engine 2>&1; then
+              INSTALL_OK=true
+            else
+              echo "  attempt 1 failed, trying dnf..."
+              $PY37_BIN /bin/dnf install -y docker docker-engine 2>&1 && INSTALL_OK=true || true
+            fi
+          fi
+
+          # Attempt 2: use PYTHONPATH with python3.7 site-packages
+          if [ "$INSTALL_OK" = false ]; then
+            PY37_PATHS=""
+            for d in /usr/lib/python3.7/site-packages /usr/lib64/python3.7/site-packages; do
+              [ -d "$d" ] && PY37_PATHS="$PY37_PATHS:$d"
+            done
+            PY37_PATHS="${PY37_PATHS#:}"
+            if [ -n "$PY37_PATHS" ]; then
+              echo "  attempt 2: PYTHONPATH=$PY37_PATHS python3 /bin/yum install docker"
+              if PYTHONPATH="$PY37_PATHS" python3 /bin/yum install -y docker docker-engine 2>&1; then
+                INSTALL_OK=true
+              else
+                echo "  attempt 2 failed, trying dnf..."
+                PYTHONPATH="$PY37_PATHS" python3 /bin/dnf install -y docker docker-engine 2>&1 && INSTALL_OK=true || true
+              fi
+            fi
+          fi
+
+          # Verify
           if command -v docker >/dev/null 2>&1; then
-            echo "Docker installed successfully: $(docker --version)"
+            echo "=== Docker installed successfully: $(docker --version) ==="
           else
-            echo "ERROR: Docker still not available after install attempt"
+            echo "=== ERROR: Docker still not available after all install attempts ==="
+            exit 1
           fi
       - name: Build the Docker image
         run: |
