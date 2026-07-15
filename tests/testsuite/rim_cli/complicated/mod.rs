@@ -261,7 +261,7 @@ fn linked_rim_install_then_update() {
     assert!(String::from_utf8_lossy(&list_output.stdout)
         .trim()
         .ends_with(
-            "Test-only Toolkit stable-1.87.0
+            "Test-only Toolkit stable-1.97.0
 Test-only Toolkit stable-1.86.0
 Test-only Toolkit stable-1.82.0
 Test-only Toolkit stable-1.81.0"
@@ -276,13 +276,13 @@ Test-only Toolkit stable-1.81.0"
             "install",
             "--rustup-dist-server",
             mocked_dist_server().rustup.as_str(),
-            "1.86.0",
+            "1.97.0",
         ])
         .output()
         .unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("not yet implemented: install dist with version '1.86.0'"),);
+        .contains("not yet implemented: install dist with version '1.97.0'"),);
 }
 
 #[rim_test]

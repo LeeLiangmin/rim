@@ -158,4 +158,26 @@ CARGOEOF
 echo "=== Installing Python httpx for release script ==="
 python3 -c "import httpx" 2>/dev/null || pip3 install --quiet httpx || true
 
+echo "=== Installing Python deps for PE signing ==="
+# sign-pe-azure.py 依赖包 (用于 Windows .exe Authenticode 签名)
+python3 -c "import pefile" 2>/dev/null || pip3 install --quiet pefile || true
+python3 -c "import cryptography" 2>/dev/null || pip3 install --quiet cryptography || true
+python3 -c "import requests" 2>/dev/null || pip3 install --quiet requests || true
+
+echo "=== Installing osslsigncode (for PE Authenticode scaffolding) ==="
+if ! command -v osslsigncode >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y osslsigncode 2>/dev/null || \
+        echo "  WARNING: osslsigncode not available via apt; will use pure Python fallback"
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y osslsigncode 2>/dev/null || \
+        echo "  WARNING: osslsigncode not available via yum; will use pure Python fallback"
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y osslsigncode 2>/dev/null || \
+        echo "  WARNING: osslsigncode not available via dnf; will use pure Python fallback"
+    else
+        echo "  WARNING: no package manager found for osslsigncode; will use pure Python fallback"
+    fi
+fi
+
 echo "=== Dependencies installed successfully ==="

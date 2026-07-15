@@ -625,4 +625,77 @@ if $HAS_ERROR; then
     exit 1
 fi
 
+# ══════════════════════════════════════════════════════════════════════
+# Sign Windows executables via Azure KeyVault
+# Prerequisites:
+#   - sign-pe-azure.py script in .gitcode/scripts/
+#   - osslsigncode installed on runner (yum/dnf install osslsigncode)
+#   - AZURE_* environment variables configured in .gitcode/.env
+# ══════════════════════════════════════════════════════════════════════
+if [[ "$BUILD_TARGET" == *windows* ]] && [[ -n "${AZURE_CLIENT_SECRET:-}" ]]; then
+    echo "=== Signing Windows executables via Azure KeyVault ==="
+
+    # Find osslsigncode
+    OSSLSIGNCODE="$(command -v osslsigncode 2>/dev/null || echo '')"
+    OSSLSIGNCODE_ARG=""
+    if [[ -n "$OSSLSIGNCODE" ]]; then
+        OSSLSIGNCODE_ARG="--osslsigncode $OSSLSIGNCODE"
+        echo "  osslsigncode: $OSSLSIGNCODE"
+    else
+        echo "  WARNING: osslsigncode not found, using pure Python fallback"
+    fi
+
+    # Sign .exe files in dist directories
+    PYTHON_BIN="${PYTHON:-python3}"
+    SIGN_SCRIPT=".gitcode/scripts/sign-pe-azure.py"
+
+    for DT in "${DIST_TARGET_ARRAY[@]}"; do
+        echo "  Scanning dist/$DT for .exe files..."
+        SIGNED_COUNT=0
+        while IFS= read -r -d '' EXE_FILE; do
+            echo "    Signing: $EXE_FILE"
+            $PYTHON_BIN "$SIGN_SCRIPT" \
+                --exe "$EXE_FILE" \
+                -v \
+                --vault-url "${AZURE_KEY_VAULT_URL:?}" \
+                --cert-name "${AZURE_CERT_NAME:?}" \
+                --key-name "${AZURE_KEY_NAME:?}" \
+                --tenant-id "${AZURE_TENANT_ID:?}" \
+                --client-id "${AZURE_CLIENT_ID:?}" \
+                --client-secret "${AZURE_CLIENT_SECRET:?}" \
+                $OSSLSIGNCODE_ARG \
+                && SIGNED_COUNT=$((SIGNED_COUNT + 1)) \
+                || echo "    WARNING: signing failed for $EXE_FILE, continuing..."
+        done < <(find "dist/$DT" -maxdepth 1 -type f -name '*.exe' -print0 2>/dev/null || true)
+        echo "  [$DT] Signed $SIGNED_COUNT executable(s)"
+
+        # Re-pack zip if any exe was signed (since exe content changed)
+        if [[ "$SIGNED_COUNT" -gt 0 ]]; then
+            for ZIP_FILE in "dist/$DT"/*.zip; do
+                if [[ -f "$ZIP_FILE" ]]; then
+                    echo "  Re-packing: $ZIP_FILE (to include signed .exe)"
+                    ZIP_DIR="$(mktemp -d)"
+                    unzip -q "$ZIP_FILE" -d "$ZIP_DIR" || {
+                        echo "  WARNING: failed to unzip $ZIP_FILE, zip not updated"
+                        rm -rf "$ZIP_DIR"
+                        continue
+                    }
+                    # Copy signed .exe from dist into the unpacked zip tree
+                    find "dist/$DT" -maxdepth 1 -type f -name '*.exe' | while IFS= read -r signed_exe; do
+                        cp -f "$signed_exe" "$ZIP_DIR/$(basename "$signed_exe")" 2>/dev/null || true
+                    done
+                    # Re-create zip with store (no compression, same as original)
+                    rm -f "$ZIP_FILE"
+                    (cd "$ZIP_DIR" && zip -0 -r "$(pwd)/$(basename "$ZIP_FILE")" .) || {
+                        # Fallback: move the zip output to the right place
+                        mv "$ZIP_DIR/$(basename "$ZIP_FILE")" "dist/$DT/" 2>/dev/null || true
+                    }
+                    rm -rf "$ZIP_DIR"
+                fi
+            done
+        fi
+    done
+    echo "=== Signing complete ==="
+fi
+
 echo "=== Build completed successfully ==="
