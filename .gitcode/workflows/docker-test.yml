@@ -72,6 +72,7 @@ jobs:
           set -euo pipefail
           cd repo_workspace
           . .gitcode/.env
+          python3 -c "import httpx" 2>/dev/null || pip3 install --quiet httpx || true
           mkdir -p dist/signed
           cp /tmp/hope-signed.exe dist/signed/hope-signed.exe
           bash .gitcode/scripts/upload-gitcode-release.sh --tag "${DEFAULT_RELEASE_TAG:-dev}" --dist-dir dist/signed
